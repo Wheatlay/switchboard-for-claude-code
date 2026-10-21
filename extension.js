@@ -885,7 +885,7 @@ async function cmdMore() {
   );
   const r = await vscode.window.showQuickPick(items, { placeHolder: t('More') });
   if (!r) return;
-  if (r.settings) return vscode.commands.executeCommand('workbench.action.openSettings', '@ext:wheatlay.claude-accounts-usage');
+  if (r.settings) return vscode.commands.executeCommand('workbench.action.openSettings', '@ext:wheatlay.switchboard-for-claude-code');
   return vscode.commands.executeCommand(r.action);
 }
 
@@ -1332,7 +1332,7 @@ function reg(id, fn) {
     try {
       await fn(...args);
     } catch (e) {
-      vscode.window.showErrorMessage(`Multi-Account Switcher for Claude Code: ${e.message || e}`);
+      vscode.window.showErrorMessage(`Switchboard for Claude Code: ${e.message || e}`);
     }
   });
 }
@@ -1378,7 +1378,7 @@ async function activate(context) {
 
   context.globalState.setKeysForSync([K_META, K_REPO_DEFAULTS]);
   statusItem = vscode.window.createStatusBarItem('claudeAccounts.status', vscode.StatusBarAlignment.Left, 100);
-  statusItem.name = 'Multi-Account Switcher for Claude Code';
+  statusItem.name = 'Switchboard for Claude Code';
   statusItem.command = 'claudeAccounts.switch';
 
   let lastFocusRefresh = 0;
@@ -1428,7 +1428,7 @@ async function activate(context) {
     await startLimitWatcher(context);
     await refreshAllIdentities();
   } catch (e) {
-    vscode.window.showErrorMessage(`Multi-Account Switcher for Claude Code: ${e.message || e}`);
+    vscode.window.showErrorMessage(`Switchboard for Claude Code: ${e.message || e}`);
   }
   const usageTimer = setTimeout(() => refreshCurrentUsage(), 3000);
   refreshLimits();
@@ -1450,7 +1450,7 @@ async function runStartupPrompts(context) {
     await checkOverridingSetting();
     await checkSharedHealth();
   } catch (e) {
-    vscode.window.showErrorMessage(`Multi-Account Switcher for Claude Code: ${e.message || e}`);
+    vscode.window.showErrorMessage(`Switchboard for Claude Code: ${e.message || e}`);
   }
 }
 

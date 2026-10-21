@@ -2,7 +2,7 @@
 
 ## 2.2.1
 
-- First release of this fork, based on Multi-Account Switcher for Claude Code 1.1.0 by Kahuê Costa.
+- First release of Switchboard for Claude Code, a fork based on Multi-Account Switcher for Claude Code 1.1.0 by Kahuê Costa.
 - Plan limits (5-hour and 7-day) per account in the status bar, tooltip and picker, with a **Refresh plan limits** command.
 
 ## 1.1.0

@@ -1,6 +1,6 @@
 {
-  "displayName": "Multi-Account Switcher for Claude Code",
-  "description": "Switch Claude Code accounts per window or per repository without touching ~/.claude. Shared or isolated profiles, optional shared history.",
+  "displayName": "Switchboard for Claude Code",
+  "description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
   "cmd.switch": "Switch account",
   "cmd.add": "Add account",
   "cmd.manage": "Manage accounts",

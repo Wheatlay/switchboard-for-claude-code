@@ -1,7 +1,7 @@
 {
-	"name": "claude-accounts-usage",
-	"displayName": "Accounts + Usage for Claude Code",
-	"description": "Switch Claude Code accounts per window or repository and see each account's plan limits in the status bar. Community fork of Multi-Account Switcher for Claude Code. Not affiliated with Anthropic.",
+	"name": "switchboard-for-claude-code",
+	"displayName": "Switchboard for Claude Code",
+	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
 	"version": "2.2.1",
 	"publisher": "wheatlay",
 	"author": {
@@ -14,16 +14,14 @@
 		"theme": "dark"
 	},
 	"keywords": [
-		"claude",
 		"claude code",
-		"anthropic",
-		"account",
-		"switcher",
+		"account switcher",
 		"multi-account",
-		"profile",
-		"CLAUDE_CONFIG_DIR",
+		"profiles",
+		"usage",
+		"plan limits",
 		"rate limit",
-		"usage"
+		"status bar"
 	],
 	"engines": {
 		"vscode": "^1.85.0"
@@ -108,7 +106,7 @@
 			}
 		],
 		"configuration": {
-			"title": "Multi-Account Switcher for Claude Code",
+			"title": "Switchboard for Claude Code",
 			"properties": {
 				"claudeAccounts.scope": {
 					"type": "string",
@@ -345,10 +343,10 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Wheatlay/claude-accounts-usage.git"
+		"url": "https://github.com/Wheatlay/switchboard-for-claude-code.git"
 	},
 	"bugs": {
-		"url": "https://github.com/Wheatlay/claude-accounts-usage/issues"
+		"url": "https://github.com/Wheatlay/switchboard-for-claude-code/issues"
 	},
-	"homepage": "https://github.com/Wheatlay/claude-accounts-usage#readme"
+	"homepage": "https://github.com/Wheatlay/switchboard-for-claude-code#readme"
 }
