@@ -1338,8 +1338,8 @@ function reg(id, fn) {
 }
 
 // This fork has its own extension ID, so VS Code gives it empty storage. On first start copy
-// what the original Marketplace extension stored (accounts, names, colors, selection).
-const ORIGINAL_ID = 'kahuecosta.claude-code-multi-account';
+// what an earlier extension stored (accounts, names, colors, selection): the pre-rename fork first, then the original.
+const ORIGINAL_IDS = ['wheatlay.claude-accounts-usage', 'kahuecosta.claude-code-multi-account'];
 const K_MIGRATED = 'migratedFromOriginal';
 
 function readOriginalState(dbPath) {
@@ -1347,8 +1347,11 @@ function readOriginalState(dbPath) {
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
-      const row = db.prepare('SELECT value FROM ItemTable WHERE key = ?').get(ORIGINAL_ID);
-      return row ? JSON.parse(String(row.value)) : null;
+      for (const id of ORIGINAL_IDS) {
+        const row = db.prepare('SELECT value FROM ItemTable WHERE key = ?').get(id);
+        if (row) return JSON.parse(String(row.value));
+      }
+      return null;
     } finally {
       db.close();
     }
@@ -1368,6 +1371,15 @@ function migrateFromOriginal(context) {
   };
   copy(context.globalState, context.globalStorageUri);
   copy(context.workspaceState, context.storageUri);
+  // Cached plan limits, so the status bar shows them right away.
+  try {
+    const to = path.join(context.globalStorageUri.fsPath, 'limits.json');
+    const from = path.join(path.dirname(context.globalStorageUri.fsPath), ORIGINAL_IDS[0], 'limits.json');
+    if (!fs.existsSync(to) && fs.existsSync(from)) {
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+    }
+  } catch {}
 }
 
 async function activate(context) {
