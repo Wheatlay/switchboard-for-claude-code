@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262a31"/>
+      <stop offset="1" stop-color="#15171b"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <!-- gauge track -->
+  <path d="M30 88 A 40 40 0 1 1 98 88" stroke="#3a3f47" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <!-- gauge filled by account colors -->
+  <path d="M30 88 A 40 40 0 0 1 28.6 50.6" stroke="#4ade80" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M33.8 41.2 A 40 40 0 0 1 59 24.3" stroke="#f87171" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M69 24.3 A 40 40 0 0 1 94.2 41.2" stroke="#f472b6" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <!-- active account, like the status bar icon -->
+  <circle cx="64" cy="74" r="17" fill="#f472b6"/>
+  <circle cx="64" cy="68.5" r="5.5" fill="#15171b"/>
+  <path d="M54.5 84 Q64 72 73.5 84" fill="#15171b"/>
+</svg>

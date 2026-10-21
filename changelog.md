@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.2
+
+- New icon: a plan-limit gauge in account colors.
+
 ## 2.2.1
 
 - First release of Switchboard for Claude Code, a fork based on Multi-Account Switcher for Claude Code 1.1.0 by Kahuê Costa.
