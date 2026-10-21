@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.3
+
+- The 7-day limit now shows in the status bar whenever it is at 50% or more, also next to a high 5-hour number.
+
 ## 2.2.2
 
 - New icon: a plan-limit gauge in account colors.
