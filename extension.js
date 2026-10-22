@@ -196,6 +196,10 @@ function applyEnv(account) {
     for (const [name, value] of Object.entries(env)) coll.replace(name, value);
     coll.description = t('Claude Code account: {0}', account.name);
   }
+  // Only CLAUDE_CONFIG_DIR's value; other variables may hold secrets.
+  const others = Object.keys(env).filter((n) => n !== 'CLAUDE_CONFIG_DIR');
+  log.info(`Applied ${account.name}: CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR ?? '(unset, Claude Code uses ~/.claude)'}${!env.CLAUDE_CONFIG_DIR && ORIGINAL_ENV ? ' (inherited from how VS Code was started)' : ''}`
+    + (others.length ? `, also ${others.join(', ')}` : '') + (cfg('applyToTerminal') ? ', terminals too' : ', not in terminals'));
 }
 
 async function selectAccount(account, reason, { reload = true } = {}) {
@@ -203,7 +207,7 @@ async function selectAccount(account, reason, { reload = true } = {}) {
   if (prev.id !== account.id) await store().update(K_PREVIOUS, prev.id);
   await store().update(K_SELECTED, account.id);
   applyEnv(account);
-  log.info(`Switched to ${account.name}` + (reason ? ` (${reason})` : ''));
+  log.info(`Switched ${prev.name} → ${account.name}` + (reason ? ` (${reason})` : '') + ` · reload: ${reload ? cfg('reloadBehavior') : 'offered'}`);
   updateStatus();
   const msg = reason
     ? t('Claude Code account: {0} ({1}).', account.name, reason)
@@ -438,12 +442,35 @@ function resolveDefault() {
   return ruleAcc ? { account: ruleAcc, source: 'rule', pattern: rule.pattern } : null;
 }
 
+// One block in the log with everything that decides which account Claude Code ends up using.
+function logDiagnostics(claudeWasActive) {
+  const cur = selectedAccount();
+  const id = identityOf(cur);
+  const cc = vscode.extensions.getExtension('anthropic.claude-code');
+  const lines = [
+    `VS Code ${vscode.version}, ${process.platform}; Claude Code extension ${cc ? cc.packageJSON.version : 'NOT INSTALLED'}`
+      + (claudeWasActive ? ' (was running before Switchboard: it keeps the previous account until a reload)' : ''),
+    `Settings: scope=${cfg('scope')}, reloadBehavior=${cfg('reloadBehavior')}, applyToTerminal=${cfg('applyToTerminal')}, shareHistory=${cfg('shareHistory')}, autoApplyRepoDefault=${cfg('autoApplyRepoDefault')}`,
+    `CLAUDE_CONFIG_DIR when VS Code started: ${ORIGINAL_ENV || '(unset)'}`,
+    'Accounts: ' + allAccounts().map((a) => `${a.name} [${a.mode || 'original'}] ${configDirOf(a)}${fs.existsSync(configDirOf(a)) ? '' : ' (FOLDER MISSING)'}`).join('; '),
+    `Selected in this window: ${cur.name}, ${configDirOf(cur)}, ${id ? (id.loggedIn ? 'logged in' + (id.email ? ' as ' + id.email : '') : 'NOT LOGGED IN') : 'login unknown'}`,
+  ];
+  const over = overridingSetting();
+  if (over) lines.push(`PROBLEM: claudeCode.environmentVariables sets CLAUDE_CONFIG_DIR=${over}, which overrides switching`);
+  const d = resolveDefault();
+  if (d) lines.push(`Default for this folder: ${d.account.name} (${d.source === 'rule' ? 'rule ' + d.pattern : 'repository'})`);
+  log.info('Diagnostics:\n  ' + lines.join('\n  '));
+}
+
 async function autoApply() {
   if (!cfg('autoApplyRepoDefault')) return;
   const d = resolveDefault();
   if (!d) return;
   // Only applies when the resolved default changes; manual switches in this window are respected.
-  if (ctx.workspaceState.get(K_LAST_APPLIED) === d.account.id) return;
+  if (ctx.workspaceState.get(K_LAST_APPLIED) === d.account.id) {
+    log.info(`Default ${d.account.name} (${d.source === 'rule' ? 'rule ' + d.pattern : 'repository'}) was already applied here once; keeping ${selectedAccount().name}`);
+    return;
+  }
   await ctx.workspaceState.update(K_LAST_APPLIED, d.account.id);
   if (selectedAccount().id === d.account.id) return;
   const reason = d.source === 'rule' ? t('rule {0}', d.pattern) : t('repository default');
@@ -1547,6 +1574,7 @@ function migrateFromOriginal(context) {
 
 async function activate(context) {
   ctx = context;
+  const claudeWasActive = !!vscode.extensions.getExtension('anthropic.claude-code')?.isActive;
   log = vscode.window.createOutputChannel('Switchboard for Claude Code', { log: true });
   context.subscriptions.push(log);
   log.info(`Activated, version ${context.extension.packageJSON.version}`);
@@ -1612,7 +1640,9 @@ async function activate(context) {
     await autoApply();
     await startLimitWatcher(context);
     await refreshAllIdentities();
+    logDiagnostics(claudeWasActive);
   } catch (e) {
+    log.error('Startup:', e);
     vscode.window.showErrorMessage(`Switchboard for Claude Code: ${e.message || e}`);
   }
   const usageTimer = setTimeout(() => refreshCurrentUsage(), 3000);
