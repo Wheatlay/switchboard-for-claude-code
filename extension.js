@@ -720,7 +720,7 @@ async function cmdShowArtifacts() {
 let lastLimitPrompt = 0;
 
 async function startLimitWatcher(context) {
-  if (!cfg('suggestSwitchOnLimit')) return;
+  if (!cfg('suggestSwitchOnLimit') && !cfg('autoSwitchOnLimit')) return;
   const folder = folderPath();
   if (!folder) return;
   const account = selectedAccount();
@@ -740,6 +740,7 @@ async function startLimitWatcher(context) {
     pattern = `projects/${encoded}/**/*.jsonl`;
   }
 
+  const watchingSince = Date.now();
   const tail = new TailReader();
   const sessionDir = path.join(base, pattern.startsWith('projects/') ? 'projects' : '', encoded);
   try {
@@ -748,11 +749,35 @@ async function startLimitWatcher(context) {
 
   const onFile = async (uri) => {
     const entries = await tail.readNew(uri.fsPath);
-    const hit = entries.find((o) => isRateLimitEntry(o) && Date.now() - (Date.parse(o.timestamp) || Date.now()) < 15 * 60e3);
+    for (const o of entries) { const p = promptText(o); if (p) lastPrompt = p; }
+    // Only entries written since this window runs on this account: with shared history the session
+    // files are shared, and the limit hit of the account switched away from must not count again.
+    const hit = entries.find((o) => isRateLimitEntry(o) && (Date.parse(o.timestamp) || Date.now()) > watchingSince);
     if (hit) onLimitReached(account).catch(() => null);
   };
   const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(base), pattern));
   context.subscriptions.push(watcher, watcher.onDidChange(onFile), watcher.onDidCreate(onFile));
+}
+
+// The last thing the user typed (not tool results or Claude Code's own meta entries).
+let lastPrompt = '';
+const K_PENDING_PROMPT = 'pendingPrompt';
+function promptText(o) {
+  if (o?.type !== 'user' || o.isMeta || o.message?.role !== 'user') return '';
+  const c = o.message.content;
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : '';
+  return text.trim().startsWith('<') ? '' : text.trim(); // skips command and system wrappers
+}
+
+// Account with the most headroom whose limits are not used up; accounts without numbers come last.
+function autoSwitchTarget(others) {
+  const worst = (a) => {
+    const e = limitsCache.get(a.id);
+    if (!e?.data || e.loggedOut) return 99.5;
+    const u = project(e.data);
+    return Math.max(u.u5, u.u7);
+  };
+  return others.map((a) => ({ a, w: worst(a) })).filter((x) => x.w < 100).sort((x, y) => x.w - y.w)[0]?.a;
 }
 
 async function onLimitReached(account) {
@@ -760,6 +785,13 @@ async function onLimitReached(account) {
   lastLimitPrompt = Date.now();
   const others = allAccounts().filter((a) => a.id !== account.id && identityOf(a)?.loggedIn !== false);
   if (!others.length) return;
+  const target = cfg('autoSwitchOnLimit') && autoSwitchTarget(others);
+  if (target) {
+    // Survives the reload; shown and copied by the new window.
+    if (lastPrompt) await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, at: Date.now(), from: account.name });
+    return selectAccount(target, t('usage limit reached, switched automatically'));
+  }
+  if (!cfg('suggestSwitchOnLimit')) return;
   const buttons = others.slice(0, 2).map((a) => ({ title: t('Switch to {0}', a.name), account: a }));
   if (others.length > 2) buttons.push({ title: t('Choose...') });
   const tip = cfg('shareHistory') ? '' : ' ' + t('Tip: turn on shared history to continue the same conversation in the other account.');
@@ -1719,8 +1751,23 @@ async function activate(context) {
 
 let startupPrompts = Promise.resolve();
 
+// After an automatic switch: Claude Code's input box can't be filled from outside, so the
+// interrupted prompt goes to the clipboard, ready to paste.
+async function restorePendingPrompt(context) {
+  const p = context.globalState.get(K_PENDING_PROMPT);
+  if (!p) return;
+  await context.globalState.update(K_PENDING_PROMPT, undefined);
+  if (Date.now() - p.at > 10 * 60e3) return;
+  await vscode.env.clipboard.writeText(p.text);
+  const copy = t('Copy again');
+  const res = await vscode.window.showInformationMessage(
+    t('Switched from "{0}" after its usage limit. Your last prompt is in the clipboard, paste it into Claude Code.', p.from), copy);
+  if (res === copy) await vscode.env.clipboard.writeText(p.text);
+}
+
 async function runStartupPrompts(context) {
   try {
+    await restorePendingPrompt(context);
     if (!getRecords().length && !context.globalState.get(K_IMPORT_PROMPTED)) {
       await context.globalState.update(K_IMPORT_PROMPTED, true);
       await cmdImport({ prompt: true });

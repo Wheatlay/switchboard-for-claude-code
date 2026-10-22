@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.0
+
+- **Auto-switch on usage limit** (`claudeAccounts.autoSwitchOnLimit`, off by default). When the current account hits its limit, the window switches to the account with the most headroom and reloads. The prompt you sent last is copied to the clipboard, ready to paste again.
+- The "hit its usage limit" notice no longer comes back after switching accounts with shared history on.
+
 ## 2.4.1
 
 - No more repeated "not linked to these shared items" warning for items Claude Code has removed from `~/.claude` (e.g. `todos`).

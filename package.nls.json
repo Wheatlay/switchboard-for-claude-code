@@ -31,6 +31,7 @@
   "cfg.rules.pattern": "Folder or remote pattern.",
   "cfg.rules.account": "Account id or name.",
   "cfg.suggestSwitchOnLimit": "When the current account hits its usage limit in this window, offer to switch to another account.",
+  "cfg.autoSwitchOnLimit": "When the current account hits its usage limit in this window, switch to the account with the most headroom and reload without asking. Your last prompt is copied to the clipboard so you can paste it again.",
   "cfg.gravatar": "Show the Gravatar of each account's e-mail in the account picker. Off by default: when on, the extension requests images from gravatar.com, sending a hash of the e-mail.",
   "color.orange": "Account color: orange.",
   "color.green": "Account color: green.",

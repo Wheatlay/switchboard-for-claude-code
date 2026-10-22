@@ -31,6 +31,7 @@
   "cfg.rules.pattern": "Padrão de pasta ou de remote.",
   "cfg.rules.account": "ID ou nome da conta.",
   "cfg.suggestSwitchOnLimit": "Quando a conta atual atingir o limite de uso nesta janela, oferecer a troca para outra conta.",
+  "cfg.autoSwitchOnLimit": "Quando a conta atual atingir o limite de uso nesta janela, trocar para a conta com mais folga e recarregar sem perguntar. O seu último prompt é copiado para a área de transferência para colar de novo.",
   "cfg.gravatar": "Mostrar o Gravatar do e-mail de cada conta no seletor. Desligado por padrão: quando ligado, a extensão busca imagens em gravatar.com, enviando um hash do e-mail.",
   "color.orange": "Cor de conta: laranja.",
   "color.green": "Cor de conta: verde.",
