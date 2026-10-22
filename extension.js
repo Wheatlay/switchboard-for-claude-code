@@ -553,7 +553,7 @@ async function refreshCurrentUsage() {
 // A claude.ai artifact opens only in a browser logged into the account that published it.
 // The window that gets the port serves every account's artifacts on 127.0.0.1, found in the logs.
 
-let preview = null; // { srv, scanner, owner, timer, warned }
+let preview = null; // { srv, scanner, startedAt, owner, ready, polling, timer, portBlocked }
 const artifactsFile = () => path.join(ctx.globalStorageUri.fsPath, 'artifacts.json');
 const previewPort = () => cfg('artifactPreviewPort') || 4999;
 const previewUrl = (id) => `http://127.0.0.1:${previewPort()}/` + (id ? `a/${encodeURIComponent(id)}/` : '');
@@ -580,20 +580,36 @@ function recordArtifacts(records, notify) {
   if (!records.length) return;
   const before = new Set(readRegistry(artifactsFile()).map((i) => i.id));
   try { addToRegistry(artifactsFile(), records); } catch (e) { log.error('Artifact registry:', e); return; }
-  if (!notify) return;
   for (const r of new Map(records.map((x) => [x.id, x])).values()) {
     if (before.has(r.id)) continue; // republishes update the preview live, no new toast
-    log.info(`Artifact published: ${r.title || r.id} (${r.account || 'shared history'}) → ${previewUrl(r.id)}, folder ${r.root}`);
+    log.info(`Artifact found: ${r.title || r.id} (${r.account || 'shared history'}) → ${previewUrl(r.id)}, folder ${r.root}`);
+    // Toast only for what is published now, not for old sessions read for the first time.
+    if (!notify || !(Date.parse(r.updatedAt) >= (preview?.startedAt ?? Infinity))) continue;
     const open = t('Open locally');
     vscode.window.showInformationMessage(t('Artifact published: {0}', r.title || r.id), open)
       .then((b) => b === open && openArtifact(r.id));
   }
 }
 
+// One poll at a time: the timer and a request for an unknown id would read the same lines twice.
+function pollArtifacts() {
+  const p = preview;
+  if (!p?.ready) return Promise.resolve();
+  if (!p.polling) {
+    p.polling = p.scanner.poll()
+      .then((found) => recordArtifacts(found, true))
+      .catch((e) => log.error('Artifact preview:', e))
+      .finally(() => { p.polling = null; });
+  }
+  return p.polling;
+}
+
 async function findArtifact(id) {
   const hit = () => readRegistry(artifactsFile()).find((i) => i.id === id);
-  if (hit() || !preview?.owner) return hit();
-  recordArtifacts(await preview.scanner.poll(), true); // published a moment ago
+  if (hit()) return hit();
+  await preview?.initDone; // first scan still running
+  if (hit()) return hit();
+  await pollArtifacts(); // published a moment ago
   return hit();
 }
 
@@ -601,32 +617,39 @@ async function startPreview() {
   if (preview || !cfg('artifactPreview')) return;
   const health = `switchboard ${ctx.extension.packageJSON.version}`;
   const srv = createPreviewServer({ port: previewPort(), health, listItems: () => readRegistry(artifactsFile()), findItem: findArtifact });
-  const p = (preview = { srv, scanner: new ArtifactScanner(artifactSources), owner: false, timer: null, warned: false });
+  const p = (preview = {
+    srv, scanner: new ArtifactScanner(artifactSources), startedAt: Date.now(),
+    owner: false, ready: false, polling: null, timer: null, portBlocked: false,
+  });
   const tryOwn = async () => {
     const r = await srv.listen().catch(() => 'error');
     if (r === 'listening') {
       p.owner = true;
-      const found = await p.scanner.init(7);
+      // First run: look further back so links shared before the install work too.
+      const days = fs.existsSync(artifactsFile()) ? 7 : 30;
+      p.initDone = p.scanner.init(days);
+      const found = await p.initDone;
       recordArtifacts(found, false);
-      log.info(`Artifact preview serving on ${previewUrl()} (${found.length} publishes found in recent logs)`);
+      p.ready = true;
+      log.info(`Artifact preview serving on ${previewUrl()} (${found.length} publishes in the last ${days} days of logs)`);
       return;
     }
-    if (p.warned) return;
-    // Another window serving is fine; anything else holds the port.
+    if (p.portBlocked) return;
+    // Another window serving is fine; anything else holds the port. Logged here, shown when the list is opened.
     const h = await fetch(`http://127.0.0.1:${previewPort()}/health`).then((x) => x.text()).catch(() => '');
     if (!h.startsWith('switchboard')) {
-      p.warned = true;
+      p.portBlocked = true;
       log.warn(`Artifact preview: port ${previewPort()} is held by another program (health: ${JSON.stringify(h.slice(0, 40))})`);
-      vscode.window.showWarningMessage(t('Artifact preview: port {0} is used by another program. Change claudeAccounts.artifactPreviewPort.', previewPort()));
     }
   };
   let busy = false;
   p.timer = setInterval(async () => {
     if (busy) return;
     busy = true;
-    try { p.owner ? recordArtifacts(await p.scanner.poll(), true) : await tryOwn(); } catch (e) { log.error('Artifact preview:', e); } finally { busy = false; }
+    try { p.owner ? await pollArtifacts() : await tryOwn(); } catch (e) { log.error('Artifact preview:', e); } finally { busy = false; }
   }, 5000);
-  await tryOwn().catch(() => null);
+  busy = true;
+  await tryOwn().catch((e) => log.error('Artifact preview:', e)).finally(() => { busy = false; });
 }
 
 async function stopPreview() {
@@ -643,6 +666,9 @@ async function cmdShowArtifacts() {
     const b = await vscode.window.showInformationMessage(t('Local artifact preview is turned off.'), on);
     if (b === on) await vscode.workspace.getConfiguration('claudeAccounts').update('artifactPreview', true, vscode.ConfigurationTarget.Global);
     return;
+  }
+  if (preview?.portBlocked) {
+    vscode.window.showWarningMessage(t('Artifact preview: port {0} is used by another program. Change claudeAccounts.artifactPreviewPort.', previewPort()));
   }
   const items = readRegistry(artifactsFile()).map((i) => ({
     label: i.title || i.id,
