@@ -816,6 +816,7 @@ function renderAccountItems() {
       if (!accounts.some((a) => a.id === id)) { item.dispose(); items.delete(id); }
     }
   }
+  let prevWarn = false;
   accounts.forEach((a, idx) => {
     let item = accountItems.get(a.id);
     if (!item) {
@@ -827,10 +828,11 @@ function renderAccountItems() {
       // Just left of the account item.
       sep = vscode.window.createStatusBarItem(`claudeAccounts.separator.${a.id}`, vscode.StatusBarAlignment.Left, 100 - idx / 100 + 1e-4);
       sep.name = 'Claude: separator';
-      sep.text = '│';
       sep.color = new vscode.ThemeColor('disabledForeground');
       sepItems.set(a.id, sep);
     }
+    // A colored box paints its own padding, so after one the gap needs that width back.
+    sep.text = (prevWarn ? '\u00a0\u00a0' : '') + '│';
     if (idx > 0) sep.show(); else sep.hide();
     let limitItem = limitItems.get(a.id);
     if (!limitItem) {
@@ -850,6 +852,7 @@ function renderAccountItems() {
     // A background color overrides the text color, so a warning goes on a separate item
     // with the numbers and the account keeps its own color.
     const warn = worst >= 90 ? 'statusBarItem.errorBackground' : worst >= 75 ? 'statusBarItem.warningBackground' : null;
+    prevWarn = !!warn;
     item.text = `${icon} ${name}` + (loggedOut ? ` $(sign-in) ${t('log in')}` : warn ? '' : data ? ` ${limitsText(data)}` : !cfg('planLimits') ? '' : error ? ' $(warning)' : ' …');
     // Last known numbers of an unused account: account color dimmed out, no warning.
     item.color = stale && data ? new vscode.ThemeColor('disabledForeground') : themeColor(a.color);
