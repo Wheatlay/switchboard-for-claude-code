@@ -43,8 +43,12 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 
 **Usage**
 - 5-hour and 7-day plan limits per account, in the status bar, tooltip and picker
-- Tokens used today and over the last 7 days, from Claude Code's local logs
+- Tokens used today, over 7 and 30 days and all time, with what it would cost at API prices. Daily totals are kept, so the history outlasts Claude Code's log cleanup.
 - When you hit a limit, Switchboard offers to switch to another account in one click
+
+**Artifacts from any account**
+- A claude.ai artifact opens only in a browser logged into the account that published it. Switchboard previews artifacts that Claude Code publishes from local files on `http://127.0.0.1:4999`, from every account, with no login and live reload. Design canvases show their boards: pan, zoom, fit.
+- A notification with **Open locally** after each new artifact, and a list in **More > Artifacts**.
 
 **Personal touch**
 - E-mail, plan (e.g. Pro, Max 20x) and organization for each account
@@ -62,12 +66,14 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 | `claudeAccounts.shareHistory` | `false` | Shared conversation history. Change it with the **Share history** command so existing history is merged. |
 | `claudeAccounts.historyItems` | projects, history.jsonl… | What counts as history. |
 | `claudeAccounts.autoApplyRepoDefault` | `true` | Apply the repository's account when it opens. |
-| `claudeAccounts.reloadBehavior` | `ask` | Reload after switching: `ask`, `always` or `never`. |
+| `claudeAccounts.reloadBehavior` | `always` | Reload after switching: `ask`, `always` or `never`. |
 | `claudeAccounts.applyToTerminal` | `true` | Use the account in integrated terminals too. |
 | `claudeAccounts.loginCommand` | `claude auth login` | Command used to log in. |
 | `claudeAccounts.statusBarStyle` | `name` | `name`, `initials` or `icon`. |
 | `claudeAccounts.showPlan` | `true` | Show the plan name. |
 | `claudeAccounts.rules` | `[]` | Default-account rules, see below. |
+| `claudeAccounts.artifactPreview` | `true` | Local artifact preview. |
+| `claudeAccounts.artifactPreviewPort` | `4999` | Port of the preview. |
 | `claudeAccounts.suggestSwitchOnLimit` | `true` | Offer a switch when you hit a limit. |
 | `claudeAccounts.gravatar` | `false` | Gravatar pictures in the picker. |
 
@@ -103,7 +109,8 @@ Shared items are links. On Windows, folders use junctions, which need no admin r
 - If `/status` shows the wrong account right after startup, reload the window once.
 - If a tool replaces a shared file instead of editing it, the link breaks. Switchboard offers **Relink** and keeps a `.bak` copy.
 - On macOS, logins live in the Keychain, so the plan may not show.
-- Plan limits and usage rely on undocumented Claude Code formats and may break after updates.
+- The artifact preview shows files as they are on disk. Dynamic parts of design pages (loops, conditions, imports) are simplified, files uploaded to claude.ai are not shown, and artifacts in a session scratchpad disappear when Windows cleans its temp folder.
+- Plan limits, usage and artifact detection rely on undocumented Claude Code formats and may break after updates.
 
 </details>
 
@@ -111,6 +118,7 @@ Shared items are links. On Windows, folders use junctions, which need no admin r
 
 - **No telemetry.** Nothing is collected about you.
 - **Plan limits.** To read your limits, Switchboard takes the account's Claude Code login token from `.credentials.json` and sends a one-token request to `api.anthropic.com`. The limits come from the response headers. The token goes only to Anthropic and is never stored or shown. Each check uses a tiny bit of your plan.
+- **Artifact preview.** The preview server listens only on 127.0.0.1 and accepts only requests addressed to 127.0.0.1 or localhost. It serves just the folders of published artifacts, never hidden files such as `.env`.
 - **Gravatar** (off by default) sends a SHA-256 hash of the account's e-mail to gravatar.com.
 
 ## Requirements

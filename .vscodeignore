@@ -3,3 +3,5 @@
 **/*.vsix
 node_modules/**
 images/icon.svg
+test/**
+.playwright-mcp/**

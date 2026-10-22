@@ -161,5 +161,14 @@
   "7 days": "7 dias",
   "30 days": "30 dias",
   "Since {0}": "Desde {0}",
-  "{0} tokens · ≈ {1} at API prices": "{0} tokens · ≈ {1} a preços da API"
+  "{0} tokens · ≈ {1} at API prices": "{0} tokens · ≈ {1} a preços da API",
+  "Open locally": "Abrir localmente",
+  "Artifact published: {0}": "Artefato publicado: {0}",
+  "Artifact preview: port {0} is used by another program. Change claudeAccounts.artifactPreviewPort.": "Prévia de artefatos: a porta {0} está em uso por outro programa. Altere claudeAccounts.artifactPreviewPort.",
+  "Turn on": "Ligar",
+  "Local artifact preview is turned off.": "A prévia local de artefatos está desligada.",
+  "All artifacts in the browser": "Todos os artefatos no navegador",
+  "Artifacts published by Claude Code, previewed locally (no claude.ai login needed)": "Artefatos publicados pelo Claude Code, vistos localmente (sem login no claude.ai)",
+  "Artifacts (local preview)": "Artefatos (prévia local)",
+  "Show logs": "Mostrar logs"
 }

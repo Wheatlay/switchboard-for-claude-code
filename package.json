@@ -2,7 +2,7 @@
 	"name": "switchboard-for-claude-code",
 	"displayName": "Switchboard for Claude Code",
 	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
-	"version": "2.3.0",
+	"version": "2.4.0",
 	"publisher": "wheatlay",
 	"author": {
 		"name": "Wheatlay"
@@ -44,6 +44,7 @@
 	},
 	"scripts": {
 		"check": "node --check extension.js",
+		"test": "node --test test/*.test.js",
 		"package": "npx --yes @vscode/vsce@3 package",
 		"publish": "npx --yes @vscode/vsce@3 publish"
 	},
@@ -100,6 +101,16 @@
 				"category": "Claude Accounts"
 			},
 			{
+				"command": "claudeAccounts.showArtifacts",
+				"title": "%cmd.showArtifacts%",
+				"category": "Claude Accounts"
+			},
+			{
+				"command": "claudeAccounts.showLogs",
+				"title": "%cmd.showLogs%",
+				"category": "Claude Accounts"
+			},
+			{
 				"command": "claudeAccounts.refreshLimits",
 				"title": "Refresh plan limits (all accounts)",
 				"category": "Claude Accounts"
@@ -145,6 +156,20 @@
 					],
 					"description": "%cfg.sharedItems%"
 				},
+				"claudeAccounts.artifactPreview": {
+					"scope": "application",
+					"type": "boolean",
+					"default": true,
+					"description": "%cfg.artifactPreview%"
+				},
+				"claudeAccounts.artifactPreviewPort": {
+					"scope": "application",
+					"type": "number",
+					"default": 4999,
+					"minimum": 1024,
+					"maximum": 65535,
+					"description": "%cfg.artifactPreviewPort%"
+				},
 				"claudeAccounts.shareHistory": {
 					"type": "boolean",
 					"default": false,
@@ -177,7 +202,7 @@
 						"always",
 						"never"
 					],
-					"default": "ask",
+					"default": "always",
 					"description": "%cfg.reloadBehavior%"
 				},
 				"claudeAccounts.applyToTerminal": {

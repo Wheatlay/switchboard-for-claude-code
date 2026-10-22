@@ -10,6 +10,8 @@ const { normalizeRemote, matchRule } = require('./lib/rules');
 const { readIdentity, identityFiles, mtimeKey } = require('./lib/identity');
 const { encodeProjectDir, isRateLimitEntry, formatTokens, totalTokens, TailReader } = require('./lib/usage');
 const { updateHistory, sumDays, firstDay, daysAgo } = require('./lib/history');
+const { ArtifactScanner, readRegistry, addToRegistry } = require('./lib/artifacts');
+const { createPreviewServer } = require('./lib/preview');
 const { fetchLimits, limitsText, limitsTable, fmtClock, project, LoggedOut, TokenExpired } = require('./lib/limits');
 
 const t = (message, ...args) => vscode.l10n.t(message, ...args);
@@ -33,6 +35,8 @@ const ICONS = [
 ];
 
 let ctx;
+// Output > Switchboard for Claude Code. Console until activate creates the channel.
+let log = { info: console.log, warn: console.warn, error: console.error };
 let statusItem;
 let currentRepo = null;
 const identityCache = new Map(); // id -> { key, data }
@@ -199,6 +203,7 @@ async function selectAccount(account, reason, { reload = true } = {}) {
   if (prev.id !== account.id) await store().update(K_PREVIOUS, prev.id);
   await store().update(K_SELECTED, account.id);
   applyEnv(account);
+  log.info(`Switched to ${account.name}` + (reason ? ` (${reason})` : ''));
   updateStatus();
   const msg = reason
     ? t('Claude Code account: {0} ({1}).', account.name, reason)
@@ -544,6 +549,113 @@ async function refreshCurrentUsage() {
   } catch { /* best effort */ }
 }
 
+// ───────────────────────── local artifact preview ─────────────────────────
+// A claude.ai artifact opens only in a browser logged into the account that published it.
+// The window that gets the port serves every account's artifacts on 127.0.0.1, found in the logs.
+
+let preview = null; // { srv, scanner, owner, timer, warned }
+const artifactsFile = () => path.join(ctx.globalStorageUri.fsPath, 'artifacts.json');
+const previewPort = () => cfg('artifactPreviewPort') || 4999;
+const previewUrl = (id) => `http://127.0.0.1:${previewPort()}/` + (id ? `a/${encodeURIComponent(id)}/` : '');
+
+function artifactSources() {
+  const seen = new Set();
+  const out = [];
+  for (const a of allAccounts()) {
+    let dir;
+    try { dir = fs.realpathSync(projectsDirOf(a)); } catch { continue; }
+    if (seen.has(dir)) continue; // shared history: one folder for all accounts
+    seen.add(dir);
+    out.push({ dir, account: cfg('shareHistory') ? '' : a.name });
+  }
+  return out;
+}
+
+async function openArtifact(id) {
+  const uri = await vscode.env.asExternalUri(vscode.Uri.parse(previewUrl(id)));
+  return vscode.env.openExternal(uri);
+}
+
+function recordArtifacts(records, notify) {
+  if (!records.length) return;
+  const before = new Set(readRegistry(artifactsFile()).map((i) => i.id));
+  try { addToRegistry(artifactsFile(), records); } catch (e) { log.error('Artifact registry:', e); return; }
+  if (!notify) return;
+  for (const r of new Map(records.map((x) => [x.id, x])).values()) {
+    if (before.has(r.id)) continue; // republishes update the preview live, no new toast
+    log.info(`Artifact published: ${r.title || r.id} (${r.account || 'shared history'}) → ${previewUrl(r.id)}, folder ${r.root}`);
+    const open = t('Open locally');
+    vscode.window.showInformationMessage(t('Artifact published: {0}', r.title || r.id), open)
+      .then((b) => b === open && openArtifact(r.id));
+  }
+}
+
+async function findArtifact(id) {
+  const hit = () => readRegistry(artifactsFile()).find((i) => i.id === id);
+  if (hit() || !preview?.owner) return hit();
+  recordArtifacts(await preview.scanner.poll(), true); // published a moment ago
+  return hit();
+}
+
+async function startPreview() {
+  if (preview || !cfg('artifactPreview')) return;
+  const health = `switchboard ${ctx.extension.packageJSON.version}`;
+  const srv = createPreviewServer({ port: previewPort(), health, listItems: () => readRegistry(artifactsFile()), findItem: findArtifact });
+  const p = (preview = { srv, scanner: new ArtifactScanner(artifactSources), owner: false, timer: null, warned: false });
+  const tryOwn = async () => {
+    const r = await srv.listen().catch(() => 'error');
+    if (r === 'listening') {
+      p.owner = true;
+      const found = await p.scanner.init(7);
+      recordArtifacts(found, false);
+      log.info(`Artifact preview serving on ${previewUrl()} (${found.length} publishes found in recent logs)`);
+      return;
+    }
+    if (p.warned) return;
+    // Another window serving is fine; anything else holds the port.
+    const h = await fetch(`http://127.0.0.1:${previewPort()}/health`).then((x) => x.text()).catch(() => '');
+    if (!h.startsWith('switchboard')) {
+      p.warned = true;
+      log.warn(`Artifact preview: port ${previewPort()} is held by another program (health: ${JSON.stringify(h.slice(0, 40))})`);
+      vscode.window.showWarningMessage(t('Artifact preview: port {0} is used by another program. Change claudeAccounts.artifactPreviewPort.', previewPort()));
+    }
+  };
+  let busy = false;
+  p.timer = setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try { p.owner ? recordArtifacts(await p.scanner.poll(), true) : await tryOwn(); } catch (e) { log.error('Artifact preview:', e); } finally { busy = false; }
+  }, 5000);
+  await tryOwn().catch(() => null);
+}
+
+async function stopPreview() {
+  const p = preview;
+  preview = null;
+  if (!p) return;
+  clearInterval(p.timer);
+  if (p.owner) await p.srv.close();
+}
+
+async function cmdShowArtifacts() {
+  if (!cfg('artifactPreview')) {
+    const on = t('Turn on');
+    const b = await vscode.window.showInformationMessage(t('Local artifact preview is turned off.'), on);
+    if (b === on) await vscode.workspace.getConfiguration('claudeAccounts').update('artifactPreview', true, vscode.ConfigurationTarget.Global);
+    return;
+  }
+  const items = readRegistry(artifactsFile()).map((i) => ({
+    label: i.title || i.id,
+    description: [i.account, i.updatedAt && new Date(i.updatedAt).toLocaleString()].filter(Boolean).join(' · '),
+    detail: i.root,
+    id: i.id,
+  }));
+  const r = await vscode.window.showQuickPick(
+    [{ label: '$(globe) ' + t('All artifacts in the browser'), id: '' }, ...items],
+    { placeHolder: t('Artifacts published by Claude Code, previewed locally (no claude.ai login needed)'), matchOnDetail: true });
+  if (r) await openArtifact(r.id);
+}
+
 let lastLimitPrompt = 0;
 
 async function startLimitWatcher(context) {
@@ -713,6 +825,7 @@ async function refreshLimits({ force = false } = {}) {
         entry = e instanceof LoggedOut ? { loggedOut: true }
           : e instanceof TokenExpired ? { data: prev, stale: true }
           : { data: prev, error: e.message || String(e) };
+        if (!(e instanceof LoggedOut || e instanceof TokenExpired)) log.warn(`Limits for ${a.name}: ${e.message || e}`);
       }
       limitsCache.set(a.id, entry);
       shared[dir] = { at: Date.now(), entry };
@@ -720,7 +833,7 @@ async function refreshLimits({ force = false } = {}) {
     fs.mkdirSync(path.dirname(limitsFile()), { recursive: true });
     fs.writeFileSync(limitsFile(), JSON.stringify(shared));
   } catch (e) {
-    console.error('[claude accounts] limits refresh failed', e);
+    log.error('Limits refresh failed:', e);
   } finally {
     limitsRunning = false;
   }
@@ -880,10 +993,11 @@ async function cmdMore() {
     label: '$(history) ' + (cfg('shareHistory') ? t('Stop sharing history...') : t('Share history across accounts...')),
     action: 'claudeAccounts.toggleHistorySharing',
   });
-  // With shared history the logs can't be split by account, so this would show one total.
   items.push({ label: '$(graph) ' + t('Token usage by account (local logs)'), action: 'claudeAccounts.showUsage' });
+  items.push({ label: '$(preview) ' + t('Artifacts (local preview)'), action: 'claudeAccounts.showArtifacts' });
   items.push(
     { label: '$(refresh) ' + t('Refresh plan limits'), action: 'claudeAccounts.refreshLimits' },
+    { label: '$(output) ' + t('Show logs'), action: 'claudeAccounts.showLogs' },
     { label: '$(settings) ' + t('Settings'), settings: true },
   );
   const r = await vscode.window.showQuickPick(items, { placeHolder: t('More') });
@@ -1374,7 +1488,7 @@ function readOriginalState(dbPath) {
       db.close();
     }
   } catch (e) {
-    console.error('[claude accounts] cannot read original state from', dbPath, e);
+    log.error('Cannot read the original extension state from', dbPath, e);
     return null;
   }
 }
@@ -1402,6 +1516,9 @@ function migrateFromOriginal(context) {
 
 async function activate(context) {
   ctx = context;
+  log = vscode.window.createOutputChannel('Switchboard for Claude Code', { log: true });
+  context.subscriptions.push(log);
+  log.info(`Activated, version ${context.extension.packageJSON.version}`);
   migrateFromOriginal(context);
   // First, synchronously: set the environment before the Claude Code extension starts the CLI.
   applyEnv(selectedAccount());
@@ -1425,11 +1542,17 @@ async function activate(context) {
     reg('claudeAccounts.clearRepoDefault', cmdClearRepoDefault),
     reg('claudeAccounts.addRule', cmdAddRule),
     reg('claudeAccounts.showUsage', cmdShowUsage),
+    reg('claudeAccounts.showArtifacts', cmdShowArtifacts),
+    reg('claudeAccounts.showLogs', () => log.show()),
+    { dispose: () => { stopPreview(); } },
     reg('claudeAccounts.toggleHistorySharing', cmdToggleHistory),
     reg('claudeAccounts.importExisting', () => cmdImport()),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('claudeCode.environmentVariables') || e.affectsConfiguration('claudeAccounts')) updateStatus();
       if (e.affectsConfiguration('claudeAccounts.gravatar')) refreshAllIdentities().catch(() => null);
+      if (e.affectsConfiguration('claudeAccounts.artifactPreview') || e.affectsConfiguration('claudeAccounts.artifactPreviewPort')) {
+        stopPreview().then(startPreview).catch(() => null);
+      }
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(async () => {
       currentRepo = await detectRepo();
@@ -1462,6 +1585,7 @@ async function activate(context) {
   }
   const usageTimer = setTimeout(() => refreshCurrentUsage(), 3000);
   refreshLimits();
+  startPreview().catch(() => null);
   const limitsTimer = setInterval(refreshLimits, 60e3);
   const countdownTimer = setInterval(renderAccountItems, 30e3); // keeps reset countdowns current, no requests
   context.subscriptions.push({ dispose: () => { clearTimeout(usageTimer); clearInterval(limitsTimer); clearInterval(countdownTimer); } });

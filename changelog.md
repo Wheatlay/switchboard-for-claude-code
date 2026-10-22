@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.0
+
+- **Local artifact preview.** Artifacts that Claude Code publishes from local files open on `http://127.0.0.1:4999` from every account, with no claude.ai login and live reload. Design canvases show their boards with pan and zoom. Artifacts are found in the session logs, so nothing is added to your Claude Code settings. On by default (`claudeAccounts.artifactPreview`).
+- Logs in **Output > Switchboard for Claude Code**, and a **Show logs** command.
+- After switching accounts the window now reloads by default (`claudeAccounts.reloadBehavior`: `always`).
+
 ## 2.3.0
 
 - Token usage keeps a long-term history: daily totals per model are saved in a small file, so they survive Claude Code deleting old logs.

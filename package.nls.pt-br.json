@@ -39,5 +39,9 @@
   "color.pink": "Cor de conta: rosa.",
   "color.yellow": "Cor de conta: amarelo.",
   "color.teal": "Cor de conta: verde-azulado.",
-  "color.red": "Cor de conta: vermelho."
+  "color.red": "Cor de conta: vermelho.",
+  "cmd.showArtifacts": "Mostrar artefatos (prévia local)",
+  "cmd.showLogs": "Mostrar logs",
+  "cfg.artifactPreview": "Pré-visualiza os artefatos publicados pelo Claude Code numa página local (http://127.0.0.1), de qualquer conta, sem login no claude.ai. Os artefatos são encontrados nos logs locais das sessões; só os publicados a partir de arquivos locais podem ser mostrados.",
+  "cfg.artifactPreviewPort": "Porta da prévia local de artefatos."
 }
