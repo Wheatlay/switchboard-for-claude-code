@@ -788,7 +788,7 @@ async function onLimitReached(account) {
   const target = cfg('autoSwitchOnLimit') && autoSwitchTarget(others);
   if (target) {
     // Survives the reload; shown and copied by the new window.
-    if (lastPrompt) await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, at: Date.now(), from: account.name });
+    if (lastPrompt.trim()) await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, at: Date.now(), from: account.name });
     return selectAccount(target, t('usage limit reached, switched automatically'));
   }
   if (!cfg('suggestSwitchOnLimit')) return;
@@ -1597,6 +1597,14 @@ async function cmdImport({ prompt = false } = {}) {
 
 async function checkSharedHealth() {
   const cur = selectedAccount();
+  // Items that appeared in ~/.claude after the account was set up (e.g. agents): the account has
+  // nothing there, so linking loses nothing and needs no question.
+  const absent = (i) => { try { fs.lstatSync(path.join(cur.dir, i)); return false; } catch { return true; } };
+  const missing = brokenShares(cur).filter(absent);
+  if (missing.length) {
+    const r = linkItems(cur.dir, missing, { merge: true, tag: cur.id });
+    log.info(`Linked items new in ~/.claude for ${cur.name}:${describe(r)}`);
+  }
   const broken = brokenShares(cur);
   if (!broken.length) return;
   const relinkBtn = t('Relink');
@@ -1757,7 +1765,7 @@ async function restorePendingPrompt(context) {
   const p = context.globalState.get(K_PENDING_PROMPT);
   if (!p) return;
   await context.globalState.update(K_PENDING_PROMPT, undefined);
-  if (Date.now() - p.at > 10 * 60e3) return;
+  if (Date.now() - p.at > 10 * 60e3 || !p.text?.trim()) return;
   await vscode.env.clipboard.writeText(p.text);
   const copy = t('Copy again');
   const res = await vscode.window.showInformationMessage(

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.1
+
+- Items that appear in `~/.claude` after an account was set up (e.g. `agents`) are linked into the account automatically when it has nothing there, instead of a "not linked" warning.
+- The "last prompt is in the clipboard" notice shows only when there was a prompt to copy.
+
 ## 2.5.0
 
 - **Auto-switch on usage limit** (`claudeAccounts.autoSwitchOnLimit`, off by default). When the current account hits its limit, the window switches to the account with the most headroom and reloads. The prompt you sent last is copied to the clipboard, ready to paste again.

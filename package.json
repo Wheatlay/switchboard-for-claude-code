@@ -2,7 +2,7 @@
 	"name": "switchboard-for-claude-code",
 	"displayName": "Switchboard for Claude Code",
 	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
-	"version": "2.5.0",
+	"version": "2.5.1",
 	"publisher": "wheatlay",
 	"author": {
 		"name": "Wheatlay"
