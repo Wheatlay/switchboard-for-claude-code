@@ -16,7 +16,7 @@
   "cfg.shareHistory": "All accounts use the same conversation history from ~/.claude. Use the 'Share history across accounts' command to turn this on or off: it merges existing history instead of discarding it.",
   "cfg.historyItems": "Items treated as history: per-folder conversations (projects), prompt history (history.jsonl), checkpoints (file-history), todos and plans.",
   "cfg.autoApplyRepoDefault": "When a repository is opened, automatically apply the default account set for it.",
-  "cfg.reloadBehavior": "What to do after switching accounts (the Claude Code extension only reads the environment when it loads).",
+  "cfg.reloadBehavior": "What to do after switching accounts. The Claude Code extension only reads the environment when it loads, so a reload is needed; it also closes the open Claude Code conversation and terminals in this window.",
   "cfg.applyToTerminal": "Also set CLAUDE_CONFIG_DIR in this window's integrated terminals so the claude CLI uses the same account.",
   "cfg.loginCommand": "Command run in the terminal to log in to an account.",
   "cmd.switchToPrevious": "Switch to previous account",
@@ -44,5 +44,6 @@
   "cmd.showLogs": "Show logs",
   "cfg.artifactPreview": "Preview artifacts that Claude Code publishes on a local page (http://127.0.0.1), from any account, without logging into claude.ai. Artifacts are found in the local session logs; only those published from local files can be shown.",
   "cfg.artifactPreviewPort": "Port of the local artifact preview.",
-  "cfg.artifactPreviewAutoOpen": "Open the local preview in the browser as soon as a new artifact is published. When off, a notification offers to open it."
+  "cfg.artifactPreviewAutoOpen": "Open the local preview in the browser as soon as a new artifact is published. When off, a notification offers to open it.",
+  "cfg.planLimits": "Show each account's 5-hour and 7-day plan limits. Read every minute from the same endpoint Claude Code's /usage uses; no tokens are used."
 }

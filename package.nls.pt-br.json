@@ -16,7 +16,7 @@
   "cfg.shareHistory": "Todas as contas usam o mesmo histórico de conversas do ~/.claude. Use o comando 'Compartilhar histórico entre contas' para ligar/desligar: ele mescla o histórico existente em vez de descartá-lo.",
   "cfg.historyItems": "Itens considerados histórico: conversas por pasta (projects), histórico de prompts (history.jsonl), checkpoints (file-history), todos e planos.",
   "cfg.autoApplyRepoDefault": "Ao abrir um repositório, aplicar automaticamente a conta padrão definida para ele.",
-  "cfg.reloadBehavior": "O que fazer depois de trocar de conta (a extensão do Claude Code só lê o ambiente ao carregar).",
+  "cfg.reloadBehavior": "O que fazer depois de trocar de conta. A extensão do Claude Code só lê o ambiente ao carregar, então é preciso recarregar; isso também fecha a conversa aberta do Claude Code e os terminais desta janela.",
   "cfg.applyToTerminal": "Também definir CLAUDE_CONFIG_DIR nos terminais integrados desta janela, para o claude da CLI usar a mesma conta.",
   "cfg.loginCommand": "Comando executado no terminal para fazer login numa conta.",
   "cmd.switchToPrevious": "Voltar para a conta anterior",
@@ -44,5 +44,6 @@
   "cmd.showLogs": "Mostrar logs",
   "cfg.artifactPreview": "Pré-visualiza os artefatos publicados pelo Claude Code numa página local (http://127.0.0.1), de qualquer conta, sem login no claude.ai. Os artefatos são encontrados nos logs locais das sessões; só os publicados a partir de arquivos locais podem ser mostrados.",
   "cfg.artifactPreviewPort": "Porta da prévia local de artefatos.",
-  "cfg.artifactPreviewAutoOpen": "Abre a prévia local no navegador assim que um novo artefato é publicado. Desligado, uma notificação oferece abrir."
+  "cfg.artifactPreviewAutoOpen": "Abre a prévia local no navegador assim que um novo artefato é publicado. Desligado, uma notificação oferece abrir.",
+  "cfg.planLimits": "Mostra os limites de 5 horas e 7 dias do plano de cada conta. Lidos a cada minuto do mesmo endpoint que o /usage do Claude Code usa; nenhum token é gasto."
 }

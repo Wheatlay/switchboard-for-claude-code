@@ -66,7 +66,8 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 | `claudeAccounts.shareHistory` | `false` | Shared conversation history. Change it with the **Share history** command so existing history is merged. |
 | `claudeAccounts.historyItems` | projects, history.jsonl… | What counts as history. |
 | `claudeAccounts.autoApplyRepoDefault` | `true` | Apply the repository's account when it opens. |
-| `claudeAccounts.reloadBehavior` | `always` | Reload after switching: `ask`, `always` or `never`. |
+| `claudeAccounts.reloadBehavior` | `always` | Reload after switching: `ask`, `always` or `never`. A reload closes the open Claude Code conversation and terminals. |
+| `claudeAccounts.planLimits` | `true` | Show the 5-hour and 7-day plan limits. |
 | `claudeAccounts.applyToTerminal` | `true` | Use the account in integrated terminals too. |
 | `claudeAccounts.loginCommand` | `claude auth login` | Command used to log in. |
 | `claudeAccounts.statusBarStyle` | `name` | `name`, `initials` or `icon`. |
@@ -118,7 +119,7 @@ Shared items are links. On Windows, folders use junctions, which need no admin r
 ## Privacy
 
 - **No telemetry.** Nothing is collected about you.
-- **Plan limits.** To read your limits, Switchboard takes the account's Claude Code login token from `.credentials.json` and sends a one-token request to `api.anthropic.com`. The limits come from the response headers. The token goes only to Anthropic and is never stored or shown. Each check uses a tiny bit of your plan.
+- **Plan limits.** To read your limits, Switchboard takes the account's Claude Code login token from `.credentials.json` and asks `api.anthropic.com` for the account's usage, the same way Claude Code's `/usage` does. No tokens are used. Only if that fails does it fall back to a one-token request, whose response headers carry the limits. The login token goes only to Anthropic and is never stored or shown. Turn this off with `claudeAccounts.planLimits`.
 - **Artifact preview.** The preview server listens only on 127.0.0.1 and accepts only requests addressed to 127.0.0.1 or localhost. It serves just the folders of published artifacts, never hidden files such as `.env`.
 - **Gravatar** (off by default) sends a SHA-256 hash of the account's e-mail to gravatar.com.
 

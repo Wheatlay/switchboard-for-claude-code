@@ -3,6 +3,8 @@
 ## 2.4.0
 
 - **Local artifact preview.** Artifacts that Claude Code publishes from local files open on `http://127.0.0.1:4999` from every account, with no claude.ai login and live reload. Design canvases show their boards with pan and zoom. Artifacts are found in the session logs, so nothing is added to your Claude Code settings. On by default (`claudeAccounts.artifactPreview`); each new artifact opens in the preview by itself (`claudeAccounts.artifactPreviewAutoOpen`).
+- Plan limits are read from the same endpoint as Claude Code's `/usage`, so checking them no longer uses any tokens. New `claudeAccounts.planLimits` setting to turn them off.
+- `scope`, `shareHistory` and `rules` can only be set in user settings, so a repository's `.vscode/settings.json` can no longer change them.
 - Logs in **Output > Switchboard for Claude Code**, and a **Show logs** command.
 - After switching accounts the window now reloads by default (`claudeAccounts.reloadBehavior`: `always`).
 

@@ -120,6 +120,7 @@
 			"title": "Switchboard for Claude Code",
 			"properties": {
 				"claudeAccounts.scope": {
+					"scope": "application",
 					"type": "string",
 					"enum": [
 						"workspace",
@@ -177,6 +178,7 @@
 					"description": "%cfg.artifactPreviewPort%"
 				},
 				"claudeAccounts.shareHistory": {
+					"scope": "application",
 					"type": "boolean",
 					"default": false,
 					"description": "%cfg.shareHistory%"
@@ -243,6 +245,7 @@
 					"description": "%cfg.showPlan%"
 				},
 				"claudeAccounts.rules": {
+					"scope": "application",
 					"type": "array",
 					"default": [],
 					"description": "%cfg.rules%",
@@ -263,6 +266,12 @@
 							}
 						}
 					}
+				},
+				"claudeAccounts.planLimits": {
+					"scope": "application",
+					"type": "boolean",
+					"default": true,
+					"description": "%cfg.planLimits%"
 				},
 				"claudeAccounts.suggestSwitchOnLimit": {
 					"type": "boolean",

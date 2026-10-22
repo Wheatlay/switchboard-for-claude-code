@@ -796,10 +796,10 @@ function renderAccountItems() {
     const loggedOut = identityOf(a)?.loggedIn === false || limitsCache.get(a.id)?.loggedOut;
     const entry = loggedOut ? {} : limitsCache.get(a.id) || {};
     const { error, stale } = entry;
-    const data = entry.data && project(entry.data);
+    const data = cfg('planLimits') && entry.data && project(entry.data);
     item.name = `Claude: ${name}`;
     const icon = isCur ? '$(pass-filled)' : iconText(a);
-    item.text = `${icon} ${name}` + (loggedOut ? ` $(sign-in) ${t('log in')}` : data ? ` ${limitsText(data)}` : error ? ' $(warning)' : ' …');
+    item.text = `${icon} ${name}` + (loggedOut ? ` $(sign-in) ${t('log in')}` : data ? ` ${limitsText(data)}` : !cfg('planLimits') ? '' : error ? ' $(warning)' : ' …');
     // Last known numbers of an unused account: account color dimmed out, no warning.
     item.color = stale && data ? new vscode.ThemeColor('disabledForeground') : themeColor(a.color);
     const worst = data ? Math.max(data.u5, data.u7) : 0;
@@ -834,7 +834,7 @@ function readSharedLimits() {
 
 let limitsRunning = false;
 async function refreshLimits({ force = false } = {}) {
-  if (limitsRunning) return;
+  if (limitsRunning || !cfg('planLimits')) return;
   limitsRunning = true;
   try {
     const shared = readSharedLimits();
@@ -1579,6 +1579,7 @@ async function activate(context) {
     reg('claudeAccounts.importExisting', () => cmdImport()),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('claudeCode.environmentVariables') || e.affectsConfiguration('claudeAccounts')) updateStatus();
+      if (e.affectsConfiguration('claudeAccounts.planLimits')) { renderAccountItems(); refreshLimits({ force: true }); }
       if (e.affectsConfiguration('claudeAccounts.gravatar')) refreshAllIdentities().catch(() => null);
       if (e.affectsConfiguration('claudeAccounts.artifactPreview') || e.affectsConfiguration('claudeAccounts.artifactPreviewPort')) {
         stopPreview().then(startPreview).catch(() => null);
