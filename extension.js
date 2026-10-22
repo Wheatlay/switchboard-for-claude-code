@@ -830,8 +830,8 @@ function renderAccountItems() {
     // Last known numbers of an unused account: account color dimmed out, no warning.
     item.color = stale && data ? new vscode.ThemeColor('disabledForeground') : themeColor(a.color);
     const worst = data ? Math.max(data.u5, data.u7) : 0;
-    item.backgroundColor = worst >= 90 ? new vscode.ThemeColor('statusBarItem.errorBackground')
-      : worst >= 75 ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
+    // A background color hides the account's text color, so only the critical level gets one.
+    item.backgroundColor = worst >= 90 ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     const md = new vscode.MarkdownString(`**${name}**${isCur ? ' — ' + t('active') : ''}\n\n`, true);
     if (loggedOut) md.appendMarkdown(`$(sign-in) ${t('Logged out. Click to log in.')}\n\n`);
     if (data) md.appendMarkdown(limitsTable(data) + `\n\n${t('checked')} ${fmtClock(data.at)}\n\n`);
