@@ -387,7 +387,9 @@ function brokenShares(account) {
   const cfgBroken = account.mode === 'shared'
     ? configItems().filter((i) => fs.existsSync(path.join(src, i)) && !isLinkedTo(path.join(account.dir, i), path.join(src, i)))
     : [];
-  const histBroken = historyItems().filter((i) => !isLinkedTo(path.join(account.dir, i), path.join(src, i)));
+  // A link to an item Claude Code has since removed from ~/.claude (e.g. todos) is not broken; nothing is left to share.
+  const danglingLink = (d, s) => { if (fs.existsSync(s)) return false; try { return fs.lstatSync(d).isSymbolicLink(); } catch { return true; } };
+  const histBroken = historyItems().filter((i) => !isLinkedTo(path.join(account.dir, i), path.join(src, i)) && !danglingLink(path.join(account.dir, i), path.join(src, i)));
   return [...cfgBroken, ...histBroken];
 }
 
@@ -902,7 +904,9 @@ async function refreshLimits({ force = false } = {}) {
     await Promise.all(allAccounts().map(async (a) => {
       const dir = configDirOf(a);
       const s = shared[dir];
-      if (!force && s && Date.now() - s.at < LIMITS_TTL) {
+      // A stale entry is not reused: the token may have been renewed since (e.g. right after a switch),
+      // and checking an expired one is local, without a request.
+      if (!force && s && !s.entry?.stale && Date.now() - s.at < LIMITS_TTL) {
         limitsCache.set(a.id, s.entry);
         return;
       }
@@ -930,6 +934,29 @@ async function refreshLimits({ force = false } = {}) {
     limitsRunning = false;
   }
   renderAccountItems();
+}
+
+// Claude Code rewrites .credentials.json when it renews the token (e.g. right after a switch),
+// so a change there refreshes the limits at once instead of on the next minute tick.
+const watchedCreds = new Set();
+let credsTimer = null;
+function onCredsChange(cur, prev) {
+  if (cur.mtimeMs === prev.mtimeMs) return;
+  clearTimeout(credsTimer);
+  credsTimer = setTimeout(() => refreshLimits({ force: true }), 2000); // a burst of writes, one refresh
+}
+function watchCredentials() {
+  for (const a of allAccounts()) {
+    const f = path.join(configDirOf(a), '.credentials.json');
+    if (watchedCreds.has(f)) continue;
+    watchedCreds.add(f);
+    fs.watchFile(f, { interval: 5000, persistent: false }, onCredsChange);
+  }
+}
+function unwatchCredentials() {
+  for (const f of watchedCreds) fs.unwatchFile(f, onCredsChange);
+  watchedCreds.clear();
+  clearTimeout(credsTimer);
 }
 
 async function cmdClickAccount(id) {
@@ -1681,10 +1708,11 @@ async function activate(context) {
   }
   const usageTimer = setTimeout(() => refreshCurrentUsage(), 3000);
   refreshLimits();
+  watchCredentials();
   startPreview().catch(() => null);
-  const limitsTimer = setInterval(refreshLimits, 60e3);
+  const limitsTimer = setInterval(() => { watchCredentials(); refreshLimits(); }, 60e3); // also picks up new accounts
   const countdownTimer = setInterval(renderAccountItems, 30e3); // keeps reset countdowns current, no requests
-  context.subscriptions.push({ dispose: () => { clearTimeout(usageTimer); clearInterval(limitsTimer); clearInterval(countdownTimer); } });
+  context.subscriptions.push({ dispose: () => { clearTimeout(usageTimer); clearInterval(limitsTimer); clearInterval(countdownTimer); unwatchCredentials(); } });
   // Prompts wait for the user, so they must not hold activation (or the setup above) back.
   startupPrompts = runStartupPrompts(context);
 }
