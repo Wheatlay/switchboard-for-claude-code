@@ -156,5 +156,10 @@
   "no data": "sem dados",
   "7 days: input {0} · output {1} · cache write {2} · cache read {3} · {4} responses": "7 dias: entrada {0} · saída {1} · gravação em cache {2} · leitura de cache {3} · {4} respostas",
   "Usage cannot be split by account while history is shared.": "Não dá para separar o uso por conta enquanto o histórico é compartilhado.",
-  "Tokens recorded on this machine (local logs only; other devices are not included).": "Tokens registrados nesta máquina (só logs locais; outros dispositivos não entram)."
+  "Tokens recorded on this machine (local logs only; other devices are not included).": "Tokens registrados nesta máquina (só logs locais; outros dispositivos não entram).",
+  "Today": "Hoje",
+  "7 days": "7 dias",
+  "30 days": "30 dias",
+  "Since {0}": "Desde {0}",
+  "{0} tokens · ≈ {1} at API prices": "{0} tokens · ≈ {1} a preços da API"
 }

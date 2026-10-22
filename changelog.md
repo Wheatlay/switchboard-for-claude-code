@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+- Token usage keeps a long-term history: daily totals per model are saved in a small file, so they survive Claude Code deleting old logs.
+- The usage view shows today, 7 days, 30 days and all time, each with an estimate of what it would cost at API prices.
+- The usage view is also available when history is shared between accounts.
+
 ## 2.2.3
 
 - The 7-day limit now shows in the status bar whenever it is at 50% or more, also next to a high 5-hour number.

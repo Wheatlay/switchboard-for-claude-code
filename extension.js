@@ -8,7 +8,8 @@ const https = require('https');
 const { execFile } = require('child_process');
 const { normalizeRemote, matchRule } = require('./lib/rules');
 const { readIdentity, identityFiles, mtimeKey } = require('./lib/identity');
-const { encodeProjectDir, isRateLimitEntry, summarizeUsage, formatTokens, totalTokens, TailReader } = require('./lib/usage');
+const { encodeProjectDir, isRateLimitEntry, formatTokens, totalTokens, TailReader } = require('./lib/usage');
+const { updateHistory, sumDays, firstDay, daysAgo } = require('./lib/history');
 const { fetchLimits, limitsText, limitsTable, fmtClock, project, LoggedOut, TokenExpired } = require('./lib/limits');
 
 const t = (message, ...args) => vscode.l10n.t(message, ...args);
@@ -529,8 +530,10 @@ async function ensureGravatar(a) {
 
 const projectsDirOf = (a) => path.join(configDirOf(a), 'projects');
 
+const historyFile = () => path.join(ctx.globalStorageUri.fsPath, 'usage-history.json');
+
 async function computeUsage(a) {
-  return summarizeUsage(projectsDirOf(a));
+  return updateHistory(historyFile(), projectsDirOf(a));
 }
 
 async function refreshCurrentUsage() {
@@ -878,7 +881,7 @@ async function cmdMore() {
     action: 'claudeAccounts.toggleHistorySharing',
   });
   // With shared history the logs can't be split by account, so this would show one total.
-  if (!cfg('shareHistory')) items.push({ label: '$(graph) ' + t('Token usage by account (local logs)'), action: 'claudeAccounts.showUsage' });
+  items.push({ label: '$(graph) ' + t('Token usage by account (local logs)'), action: 'claudeAccounts.showUsage' });
   items.push(
     { label: '$(refresh) ' + t('Refresh plan limits'), action: 'claudeAccounts.refreshLimits' },
     { label: '$(settings) ' + t('Settings'), settings: true },
@@ -1255,14 +1258,29 @@ async function cmdShowUsage() {
     { location: vscode.ProgressLocation.Notification, title: t('Reading local session logs...') },
     async () => Promise.all(targets.map(async (a) => ({ a, u: await computeUsage(a).catch(() => null) })))
   );
-  const items = results.map(({ a, u }) => ({
-    label: shared ? t('All accounts (history is shared)') : a.name,
-    description: u ? t('today: {0} · 7 days: {1}', formatTokens(totalTokens(u.today)), formatTokens(totalTokens(u.week))) : t('no data'),
-    detail: u
-      ? t('7 days: input {0} · output {1} · cache write {2} · cache read {3} · {4} responses',
-        formatTokens(u.week.input), formatTokens(u.week.output), formatTokens(u.week.cacheWrite), formatTokens(u.week.cacheRead), u.week.messages)
-      : undefined,
-  }));
+  const usd = (s) => '$' + s.cost.toFixed(2) + (s.unpriced ? '+' : '');
+  const items = results.flatMap(({ a, u }) => {
+    const head = {
+      label: shared ? t('All accounts (history is shared)') : a.name,
+      description: u ? t('today: {0} · 7 days: {1}', formatTokens(totalTokens(u.today)), formatTokens(totalTokens(u.week))) : t('no data'),
+      detail: u
+        ? t('7 days: input {0} · output {1} · cache write {2} · cache read {3} · {4} responses',
+          formatTokens(u.week.input), formatTokens(u.week.output), formatTokens(u.week.cacheWrite), formatTokens(u.week.cacheRead), u.week.messages)
+        : undefined,
+    };
+    if (!u) return [head];
+    const periods = [
+      [t('Today'), daysAgo(0)], [t('7 days'), daysAgo(6)], [t('30 days'), daysAgo(29)],
+      [t('Since {0}', firstDay(u.days) || '—'), ''],
+    ];
+    return [head, ...periods.map(([label, from]) => {
+      const s = sumDays(u.days, from);
+      return {
+        label: `    ${label}`,
+        description: t('{0} tokens · ≈ {1} at API prices', formatTokens(totalTokens(s.totals)), usd(s)),
+      };
+    })];
+  });
   await vscode.window.showQuickPick(items, {
     placeHolder: shared
       ? t('Usage cannot be split by account while history is shared.')
