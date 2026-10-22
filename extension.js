@@ -43,6 +43,7 @@ const identityCache = new Map(); // id -> { key, data }
 let usageCache = null; // { at, accountId, data }
 const accountItems = new Map(); // id -> StatusBarItem (one per account, replaces statusItem)
 const limitItems = new Map(); // id -> StatusBarItem with the numbers, shown only when they need a background
+const sepItems = new Map(); // id -> dim divider left of every account but the first
 const limitsCache = new Map(); // id -> { data, error }
 let statusLines = [];
 
@@ -810,7 +811,7 @@ function updateStatus() {
 function renderAccountItems() {
   const cur = selectedAccount();
   const accounts = allAccounts();
-  for (const items of [accountItems, limitItems]) {
+  for (const items of [accountItems, limitItems, sepItems]) {
     for (const [id, item] of items) {
       if (!accounts.some((a) => a.id === id)) { item.dispose(); items.delete(id); }
     }
@@ -821,6 +822,16 @@ function renderAccountItems() {
       item = vscode.window.createStatusBarItem(`claudeAccounts.account.${a.id}`, vscode.StatusBarAlignment.Left, 100 - idx / 100);
       accountItems.set(a.id, item);
     }
+    let sep = sepItems.get(a.id);
+    if (!sep) {
+      // Just left of the account item.
+      sep = vscode.window.createStatusBarItem(`claudeAccounts.separator.${a.id}`, vscode.StatusBarAlignment.Left, 100 - idx / 100 + 1e-4);
+      sep.name = 'Claude: separator';
+      sep.text = '│';
+      sep.color = new vscode.ThemeColor('disabledForeground');
+      sepItems.set(a.id, sep);
+    }
+    if (idx > 0) sep.show(); else sep.hide();
     let limitItem = limitItems.get(a.id);
     if (!limitItem) {
       // Just right of the account item.
@@ -1613,7 +1624,7 @@ async function activate(context) {
     reg('claudeAccounts.switch', cmdSwitch),
     reg('claudeAccounts.clickAccount', cmdClickAccount),
     reg('claudeAccounts.refreshLimits', () => refreshLimits({ force: true })),
-    { dispose: () => { for (const i of [...accountItems.values(), ...limitItems.values()]) i.dispose(); } },
+    { dispose: () => { for (const i of [...accountItems.values(), ...limitItems.values(), ...sepItems.values()]) i.dispose(); } },
     reg('claudeAccounts.switchToPrevious', cmdSwitchToPrevious),
     reg('claudeAccounts.add', cmdAdd),
     reg('claudeAccounts.manage', cmdManage),
