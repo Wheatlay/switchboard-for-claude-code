@@ -48,7 +48,7 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 
 **Artifacts from any account**
 - A claude.ai artifact opens only in a browser logged into the account that published it. Switchboard previews artifacts that Claude Code publishes from local files on `http://127.0.0.1:4999`, from every account, with no login and live reload. Design canvases show their boards: pan, zoom, fit.
-- A notification with **Open locally** after each new artifact, and a list in **More > Artifacts**.
+- Each new artifact opens in the local preview by itself (or, with `artifactPreviewAutoOpen` off, a notification offers it). All of them are listed in **More > Artifacts**.
 
 **Personal touch**
 - E-mail, plan (e.g. Pro, Max 20x) and organization for each account
@@ -73,6 +73,7 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 | `claudeAccounts.showPlan` | `true` | Show the plan name. |
 | `claudeAccounts.rules` | `[]` | Default-account rules, see below. |
 | `claudeAccounts.artifactPreview` | `true` | Local artifact preview. |
+| `claudeAccounts.artifactPreviewAutoOpen` | `true` | Open each new artifact's preview automatically. |
 | `claudeAccounts.artifactPreviewPort` | `4999` | Port of the preview. |
 | `claudeAccounts.suggestSwitchOnLimit` | `true` | Offer a switch when you hit a limit. |
 | `claudeAccounts.gravatar` | `false` | Gravatar pictures in the picker. |

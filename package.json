@@ -162,6 +162,12 @@
 					"default": true,
 					"description": "%cfg.artifactPreview%"
 				},
+				"claudeAccounts.artifactPreviewAutoOpen": {
+					"scope": "application",
+					"type": "boolean",
+					"default": true,
+					"description": "%cfg.artifactPreviewAutoOpen%"
+				},
 				"claudeAccounts.artifactPreviewPort": {
 					"scope": "application",
 					"type": "number",

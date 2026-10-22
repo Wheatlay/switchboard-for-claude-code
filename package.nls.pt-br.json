@@ -43,5 +43,6 @@
   "cmd.showArtifacts": "Mostrar artefatos (prévia local)",
   "cmd.showLogs": "Mostrar logs",
   "cfg.artifactPreview": "Pré-visualiza os artefatos publicados pelo Claude Code numa página local (http://127.0.0.1), de qualquer conta, sem login no claude.ai. Os artefatos são encontrados nos logs locais das sessões; só os publicados a partir de arquivos locais podem ser mostrados.",
-  "cfg.artifactPreviewPort": "Porta da prévia local de artefatos."
+  "cfg.artifactPreviewPort": "Porta da prévia local de artefatos.",
+  "cfg.artifactPreviewAutoOpen": "Abre a prévia local no navegador assim que um novo artefato é publicado. Desligado, uma notificação oferece abrir."
 }

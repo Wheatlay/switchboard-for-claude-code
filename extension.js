@@ -585,6 +585,10 @@ function recordArtifacts(records, notify) {
     log.info(`Artifact found: ${r.title || r.id} (${r.account || 'shared history'}) → ${previewUrl(r.id)}, folder ${r.root}`);
     // Toast only for what is published now, not for old sessions read for the first time.
     if (!notify || !(Date.parse(r.updatedAt) >= (preview?.startedAt ?? Infinity))) continue;
+    if (cfg('artifactPreviewAutoOpen')) {
+      openArtifact(r.id);
+      continue;
+    }
     const open = t('Open locally');
     vscode.window.showInformationMessage(t('Artifact published: {0}', r.title || r.id), open)
       .then((b) => b === open && openArtifact(r.id));
