@@ -855,7 +855,8 @@ async function refreshLimits({ force = false } = {}) {
         entry = e instanceof LoggedOut ? { loggedOut: true }
           : e instanceof TokenExpired ? { data: prev, stale: true }
           : { data: prev, error: e.message || String(e) };
-        if (!(e instanceof LoggedOut || e instanceof TokenExpired)) log.warn(`Limits for ${a.name}: ${e.message || e}`);
+        // Logged once per new error, not every minute while it lasts (e.g. offline).
+        if (entry.error && entry.error !== limitsCache.get(a.id)?.error) log.warn(`Limits for ${a.name}: ${entry.error}`);
       }
       limitsCache.set(a.id, entry);
       shared[dir] = { at: Date.now(), entry };
