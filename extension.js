@@ -42,6 +42,7 @@ let currentRepo = null;
 const identityCache = new Map(); // id -> { key, data }
 let usageCache = null; // { at, accountId, data }
 const accountItems = new Map(); // id -> StatusBarItem (one per account, replaces statusItem)
+const limitItems = new Map(); // id -> StatusBarItem with the numbers, shown only when they need a background
 const limitsCache = new Map(); // id -> { data, error }
 let statusLines = [];
 
@@ -809,14 +810,22 @@ function updateStatus() {
 function renderAccountItems() {
   const cur = selectedAccount();
   const accounts = allAccounts();
-  for (const [id, item] of accountItems) {
-    if (!accounts.some((a) => a.id === id)) { item.dispose(); accountItems.delete(id); }
+  for (const items of [accountItems, limitItems]) {
+    for (const [id, item] of items) {
+      if (!accounts.some((a) => a.id === id)) { item.dispose(); items.delete(id); }
+    }
   }
   accounts.forEach((a, idx) => {
     let item = accountItems.get(a.id);
     if (!item) {
       item = vscode.window.createStatusBarItem(`claudeAccounts.account.${a.id}`, vscode.StatusBarAlignment.Left, 100 - idx / 100);
       accountItems.set(a.id, item);
+    }
+    let limitItem = limitItems.get(a.id);
+    if (!limitItem) {
+      // Just right of the account item.
+      limitItem = vscode.window.createStatusBarItem(`claudeAccounts.limits.${a.id}`, vscode.StatusBarAlignment.Left, 100 - idx / 100 - 1e-4);
+      limitItems.set(a.id, limitItem);
     }
     const isCur = a.id === cur.id;
     const name = a.id === DEFAULT_ID && !getMeta()[DEFAULT_ID]?.name ? t('default') : a.name;
@@ -826,12 +835,13 @@ function renderAccountItems() {
     const data = cfg('planLimits') && entry.data && project(entry.data);
     item.name = `Claude: ${name}`;
     const icon = isCur ? '$(pass-filled)' : iconText(a);
-    item.text = `${icon} ${name}` + (loggedOut ? ` $(sign-in) ${t('log in')}` : data ? ` ${limitsText(data)}` : !cfg('planLimits') ? '' : error ? ' $(warning)' : ' …');
+    const worst = data && !stale ? Math.max(data.u5, data.u7) : 0;
+    // A background color overrides the text color, so a warning goes on a separate item
+    // with the numbers and the account keeps its own color.
+    const warn = worst >= 90 ? 'statusBarItem.errorBackground' : worst >= 75 ? 'statusBarItem.warningBackground' : null;
+    item.text = `${icon} ${name}` + (loggedOut ? ` $(sign-in) ${t('log in')}` : warn ? '' : data ? ` ${limitsText(data)}` : !cfg('planLimits') ? '' : error ? ' $(warning)' : ' …');
     // Last known numbers of an unused account: account color dimmed out, no warning.
     item.color = stale && data ? new vscode.ThemeColor('disabledForeground') : themeColor(a.color);
-    const worst = data ? Math.max(data.u5, data.u7) : 0;
-    // A background color hides the account's text color, so only the critical level gets one.
-    item.backgroundColor = worst >= 90 ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     const md = new vscode.MarkdownString(`**${name}**${isCur ? ' — ' + t('active') : ''}\n\n`, true);
     if (loggedOut) md.appendMarkdown(`$(sign-in) ${t('Logged out. Click to log in.')}\n\n`);
     if (data) md.appendMarkdown(limitsTable(data) + `\n\n${t('checked')} ${fmtClock(data.at)}\n\n`);
@@ -847,6 +857,16 @@ function renderAccountItems() {
     item.tooltip = md;
     item.command = { command: 'claudeAccounts.clickAccount', title: '', arguments: [a.id] };
     item.show();
+    if (warn) {
+      limitItem.name = `Claude: ${name} limits`;
+      limitItem.text = limitsText(data);
+      limitItem.backgroundColor = new vscode.ThemeColor(warn);
+      limitItem.tooltip = md;
+      limitItem.command = item.command;
+      limitItem.show();
+    } else {
+      limitItem.hide();
+    }
   });
 }
 
@@ -1593,7 +1613,7 @@ async function activate(context) {
     reg('claudeAccounts.switch', cmdSwitch),
     reg('claudeAccounts.clickAccount', cmdClickAccount),
     reg('claudeAccounts.refreshLimits', () => refreshLimits({ force: true })),
-    { dispose: () => { for (const i of accountItems.values()) i.dispose(); } },
+    { dispose: () => { for (const i of [...accountItems.values(), ...limitItems.values()]) i.dispose(); } },
     reg('claudeAccounts.switchToPrevious', cmdSwitchToPrevious),
     reg('claudeAccounts.add', cmdAdd),
     reg('claudeAccounts.manage', cmdManage),

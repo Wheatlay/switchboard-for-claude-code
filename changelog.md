@@ -6,7 +6,7 @@
 - Plan limits are read from the same endpoint as Claude Code's `/usage`, so checking them no longer uses any tokens. New `claudeAccounts.planLimits` setting to turn them off.
 - `scope`, `shareHistory` and `rules` can only be set in user settings, so a repository's `.vscode/settings.json` can no longer change them.
 - Logs in **Output > Switchboard for Claude Code**, and a **Show logs** command.
-- An account near its limit (75% or more) shows a warning icon instead of a yellow background, so its color stays visible. Red background only from 90%.
+- An account near its limit keeps its own color: the yellow (75%+) or red (90%+) background now sits on a separate item with the numbers, right next to the account name.
 - After switching accounts the window now reloads by default (`claudeAccounts.reloadBehavior`: `always`).
 
 ## 2.3.0
