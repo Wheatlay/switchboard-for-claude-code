@@ -2,7 +2,7 @@
 	"name": "switchboard-for-claude-code",
 	"displayName": "Switchboard for Claude Code",
 	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
-	"version": "2.5.1",
+	"version": "2.5.2",
 	"publisher": "wheatlay",
 	"author": {
 		"name": "Wheatlay"
@@ -116,181 +116,244 @@
 				"category": "Claude Accounts"
 			}
 		],
-		"configuration": {
-			"title": "Switchboard for Claude Code",
-			"properties": {
-				"claudeAccounts.scope": {
-					"scope": "application",
-					"type": "string",
-					"enum": [
-						"workspace",
-						"user"
-					],
-					"enumDescriptions": [
-						"%cfg.scope.workspace%",
-						"%cfg.scope.user%"
-					],
-					"default": "workspace",
-					"description": "%cfg.scope%"
-				},
-				"claudeAccounts.accountsRoot": {
-					"scope": "application",
-					"type": "string",
-					"default": "",
-					"description": "%cfg.accountsRoot%"
-				},
-				"claudeAccounts.sharedItems": {
-					"scope": "application",
-					"type": "array",
-					"items": {
-						"type": "string"
-					},
-					"default": [
-						"settings.json",
-						"CLAUDE.md",
-						"agents",
-						"commands",
-						"skills",
-						"hooks",
-						"output-styles",
-						"plugins"
-					],
-					"description": "%cfg.sharedItems%"
-				},
-				"claudeAccounts.artifactPreview": {
-					"scope": "application",
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.artifactPreview%"
-				},
-				"claudeAccounts.artifactPreviewAutoOpen": {
-					"scope": "application",
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.artifactPreviewAutoOpen%"
-				},
-				"claudeAccounts.artifactPreviewPort": {
-					"scope": "application",
-					"type": "number",
-					"default": 4999,
-					"minimum": 1024,
-					"maximum": 65535,
-					"description": "%cfg.artifactPreviewPort%"
-				},
-				"claudeAccounts.shareHistory": {
-					"scope": "application",
-					"type": "boolean",
-					"default": false,
-					"description": "%cfg.shareHistory%"
-				},
-				"claudeAccounts.historyItems": {
-					"scope": "application",
-					"type": "array",
-					"items": {
-						"type": "string"
-					},
-					"default": [
-						"projects",
-						"history.jsonl",
-						"file-history",
-						"todos",
-						"plans"
-					],
-					"description": "%cfg.historyItems%"
-				},
-				"claudeAccounts.autoApplyRepoDefault": {
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.autoApplyRepoDefault%"
-				},
-				"claudeAccounts.reloadBehavior": {
-					"type": "string",
-					"enum": [
-						"ask",
-						"always",
-						"never"
-					],
-					"default": "always",
-					"description": "%cfg.reloadBehavior%"
-				},
-				"claudeAccounts.applyToTerminal": {
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.applyToTerminal%"
-				},
-				"claudeAccounts.loginCommand": {
-					"scope": "application",
-					"type": "string",
-					"default": "claude auth login",
-					"description": "%cfg.loginCommand%"
-				},
-				"claudeAccounts.statusBarStyle": {
-					"type": "string",
-					"enum": [
-						"name",
-						"initials",
-						"icon"
-					],
-					"enumDescriptions": [
-						"%cfg.statusBarStyle.name%",
-						"%cfg.statusBarStyle.initials%",
-						"%cfg.statusBarStyle.icon%"
-					],
-					"default": "name",
-					"description": "%cfg.statusBarStyle%"
-				},
-				"claudeAccounts.showPlan": {
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.showPlan%"
-				},
-				"claudeAccounts.rules": {
-					"scope": "application",
-					"type": "array",
-					"default": [],
-					"description": "%cfg.rules%",
-					"items": {
-						"type": "object",
-						"required": [
-							"pattern",
-							"account"
+		"configuration": [
+			{
+				"id": "claudeAccounts.accounts",
+				"title": "%cfg.section.accounts%",
+				"order": 0,
+				"properties": {
+					"claudeAccounts.scope": {
+						"scope": "application",
+						"type": "string",
+						"enum": [
+							"workspace",
+							"user"
 						],
-						"properties": {
-							"pattern": {
-								"type": "string",
-								"description": "%cfg.rules.pattern%"
-							},
-							"account": {
-								"type": "string",
-								"description": "%cfg.rules.account%"
+						"enumDescriptions": [
+							"%cfg.scope.workspace%",
+							"%cfg.scope.user%"
+						],
+						"default": "workspace",
+						"description": "%cfg.scope%",
+						"order": 0
+					},
+					"claudeAccounts.accountsRoot": {
+						"scope": "application",
+						"type": "string",
+						"default": "",
+						"markdownDescription": "%cfg.accountsRoot%",
+						"order": 1
+					},
+					"claudeAccounts.loginCommand": {
+						"scope": "application",
+						"type": "string",
+						"default": "claude auth login",
+						"description": "%cfg.loginCommand%",
+						"order": 2
+					},
+					"claudeAccounts.rules": {
+						"scope": "application",
+						"type": "array",
+						"default": [],
+						"description": "%cfg.rules%",
+						"items": {
+							"type": "object",
+							"required": [
+								"pattern",
+								"account"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "%cfg.rules.pattern%"
+								},
+								"account": {
+									"type": "string",
+									"description": "%cfg.rules.account%"
+								}
 							}
-						}
+						},
+						"order": 3
+					},
+					"claudeAccounts.autoApplyRepoDefault": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"description": "%cfg.autoApplyRepoDefault%",
+						"order": 4
+					},
+					"claudeAccounts.reloadBehavior": {
+						"scope": "application",
+						"type": "string",
+						"enum": [
+							"ask",
+							"always",
+							"never"
+						],
+						"default": "always",
+						"description": "%cfg.reloadBehavior%",
+						"enumDescriptions": [
+							"%cfg.reloadBehavior.ask%",
+							"%cfg.reloadBehavior.always%",
+							"%cfg.reloadBehavior.never%"
+						],
+						"order": 5
+					},
+					"claudeAccounts.applyToTerminal": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "%cfg.applyToTerminal%",
+						"order": 6
 					}
-				},
-				"claudeAccounts.planLimits": {
-					"scope": "application",
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.planLimits%"
-				},
-				"claudeAccounts.suggestSwitchOnLimit": {
-					"type": "boolean",
-					"default": true,
-					"description": "%cfg.suggestSwitchOnLimit%"
-				},
-				"claudeAccounts.autoSwitchOnLimit": {
-					"scope": "application",
-					"type": "boolean",
-					"default": false,
-					"description": "%cfg.autoSwitchOnLimit%"
-				},
-				"claudeAccounts.gravatar": {
-					"type": "boolean",
-					"default": false,
-					"description": "%cfg.gravatar%"
+				}
+			},
+			{
+				"id": "claudeAccounts.sharing",
+				"title": "%cfg.section.sharing%",
+				"order": 1,
+				"properties": {
+					"claudeAccounts.sharedItems": {
+						"scope": "application",
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"default": [
+							"settings.json",
+							"CLAUDE.md",
+							"agents",
+							"commands",
+							"skills",
+							"hooks",
+							"output-styles",
+							"plugins"
+						],
+						"description": "%cfg.sharedItems%",
+						"order": 0
+					},
+					"claudeAccounts.shareHistory": {
+						"scope": "application",
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%cfg.shareHistory%",
+						"order": 1
+					},
+					"claudeAccounts.historyItems": {
+						"scope": "application",
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"default": [
+							"projects",
+							"history.jsonl",
+							"file-history",
+							"todos",
+							"plans"
+						],
+						"markdownDescription": "%cfg.historyItems%",
+						"order": 2
+					}
+				}
+			},
+			{
+				"id": "claudeAccounts.statusBar",
+				"title": "%cfg.section.statusBar%",
+				"order": 2,
+				"properties": {
+					"claudeAccounts.statusBarStyle": {
+						"scope": "application",
+						"type": "string",
+						"enum": [
+							"name",
+							"initials",
+							"icon"
+						],
+						"enumDescriptions": [
+							"%cfg.statusBarStyle.name%",
+							"%cfg.statusBarStyle.initials%",
+							"%cfg.statusBarStyle.icon%"
+						],
+						"default": "name",
+						"description": "%cfg.statusBarStyle%",
+						"order": 0
+					},
+					"claudeAccounts.showPlan": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"description": "%cfg.showPlan%",
+						"order": 1
+					},
+					"claudeAccounts.gravatar": {
+						"scope": "application",
+						"type": "boolean",
+						"default": false,
+						"description": "%cfg.gravatar%",
+						"order": 2
+					}
+				}
+			},
+			{
+				"id": "claudeAccounts.limits",
+				"title": "%cfg.section.limits%",
+				"order": 3,
+				"properties": {
+					"claudeAccounts.planLimits": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"description": "%cfg.planLimits%",
+						"order": 0
+					},
+					"claudeAccounts.suggestSwitchOnLimit": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "%cfg.suggestSwitchOnLimit%",
+						"order": 1
+					},
+					"claudeAccounts.autoSwitchOnLimit": {
+						"scope": "application",
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%cfg.autoSwitchOnLimit%",
+						"order": 2
+					}
+				}
+			},
+			{
+				"id": "claudeAccounts.artifacts",
+				"title": "%cfg.section.artifacts%",
+				"order": 4,
+				"properties": {
+					"claudeAccounts.artifactPreview": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"description": "%cfg.artifactPreview%",
+						"order": 0
+					},
+					"claudeAccounts.artifactPreviewAutoOpen": {
+						"scope": "application",
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "%cfg.artifactPreviewAutoOpen%",
+						"order": 1
+					},
+					"claudeAccounts.artifactPreviewPort": {
+						"scope": "application",
+						"type": "number",
+						"default": 4999,
+						"minimum": 1024,
+						"maximum": 65535,
+						"markdownDescription": "%cfg.artifactPreviewPort%",
+						"order": 2
+					}
 				}
 			}
-		},
+		],
 		"keybindings": [
 			{
 				"command": "claudeAccounts.switchToPrevious",

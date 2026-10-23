@@ -1402,6 +1402,20 @@ async function remove(a) {
   if (wasCurrent) await selectAccount(defaultAccount(), t('previous account removed'));
 }
 
+// Last value set by the toggle command. A change made in Settings is undone and sent through the command, so history
+// is always merged or unlinked instead of silently relinked. Only the focused window reacts; the others just follow.
+let expectedShareHistory;
+async function setShareHistory(v) {
+  expectedShareHistory = v;
+  await vscode.workspace.getConfiguration('claudeAccounts').update('shareHistory', v, vscode.ConfigurationTarget.Global);
+}
+function onShareHistoryChanged() {
+  const now = !!cfg('shareHistory');
+  if (now === expectedShareHistory) return;
+  if (!vscode.window.state.focused) { expectedShareHistory = now; return; }
+  setShareHistory(!now).then(cmdToggleHistory).catch(() => null);
+}
+
 async function cmdToggleHistory() {
   const enabled = !!cfg('shareHistory');
   const accounts = getAccounts();
@@ -1418,7 +1432,7 @@ async function cmdToggleHistory() {
       shareBtn
     );
     if (ok !== shareBtn) return;
-    await vscode.workspace.getConfiguration('claudeAccounts').update('shareHistory', true, vscode.ConfigurationTarget.Global);
+    await setShareHistory(true);
     const total = { merged: 0, conflicts: [], skipped: [] };
     for (const a of accounts) {
       const r = linkHistory(a.dir, a.id);
@@ -1444,7 +1458,7 @@ async function cmdToggleHistory() {
   );
   if (!choice) return;
   for (const a of accounts) unlinkItems(a.dir, items, { copy: choice === copyBtn });
-  await vscode.workspace.getConfiguration('claudeAccounts').update('shareHistory', false, vscode.ConfigurationTarget.Global);
+  await setShareHistory(false);
   return maybeReload(t('History is no longer shared.'));
 }
 
@@ -1675,6 +1689,7 @@ function migrateFromOriginal(context) {
 
 async function activate(context) {
   ctx = context;
+  expectedShareHistory = !!cfg('shareHistory');
   const claudeWasActive = !!vscode.extensions.getExtension('anthropic.claude-code')?.isActive;
   log = vscode.window.createOutputChannel('Switchboard for Claude Code', { log: true });
   context.subscriptions.push(log);
@@ -1710,6 +1725,7 @@ async function activate(context) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('claudeCode.environmentVariables') || e.affectsConfiguration('claudeAccounts')) updateStatus();
       if (e.affectsConfiguration('claudeAccounts.planLimits')) { renderAccountItems(); refreshLimits({ force: true }); }
+      if (e.affectsConfiguration('claudeAccounts.shareHistory')) onShareHistoryChanged();
       if (e.affectsConfiguration('claudeAccounts.gravatar')) refreshAllIdentities().catch(() => null);
       if (e.affectsConfiguration('claudeAccounts.artifactPreview') || e.affectsConfiguration('claudeAccounts.artifactPreviewPort')) {
         stopPreview().then(startPreview).catch(() => null);

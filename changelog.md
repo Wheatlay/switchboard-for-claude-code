@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.2
+
+- Settings are grouped into sections (Accounts, Shared files and history, Status bar and account picker, Usage limits, Artifact preview), and every reload choice has a description.
+- Setting descriptions link to the settings they depend on.
+- Turning `claudeAccounts.shareHistory` on or off in Settings now goes through the same dialog as the command, so existing history is merged or copied instead of being silently relinked.
+- All settings now apply to every window (user settings only); per-workspace values are ignored.
+
 ## 2.5.1
 
 - Items that appear in `~/.claude` after an account was set up (e.g. `agents`) are linked into the account automatically when it has nothing there, instead of a "not linked" warning.
