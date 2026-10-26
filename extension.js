@@ -1087,18 +1087,43 @@ function loginTerminal(account, command = cfg('loginCommand'), title = t('Claude
   const term = vscode.window.createTerminal({ name: title, env });
   loginTerminals.add(term); // closing it refreshes identity and limits
   term.show();
-  term.sendText(command);
+  // The window's environmentVariableCollection (applyToTerminal) overrides `env` with the
+  // selected account's values, so set them again in the command itself.
+  term.sendText(withEnv(env, command));
   // The terminal stays open after the CLI finishes, so also poll until the login state flips.
   const was = identityOf(account)?.loggedIn;
   let n = 0;
   const poll = setInterval(async () => {
     await refreshIdentity(account).catch(() => null);
-    if (identityOf(account)?.loggedIn !== was || ++n >= 36) {
+    const now = identityOf(account)?.loggedIn;
+    if (now !== was || ++n >= 36) {
       clearInterval(poll);
       updateStatus();
       refreshLimits({ force: true });
+      // The Claude Code panel keeps the old login until the window reloads.
+      if (now !== was && selectedAccount().id === account.id) {
+        maybeReload(now ? t('Logged in to "{0}".', account.name) : t('Logged out of "{0}".', account.name));
+      }
     }
   }, 5000);
+}
+
+// Prefixes `command` with variable assignments in the syntax of the default terminal shell.
+// A null value unsets the variable.
+function withEnv(env, command) {
+  const shell = path.basename(vscode.env.shell || '').toLowerCase();
+  const entries = Object.entries(env);
+  if (!entries.length) return command;
+  if (/^(pwsh|powershell)/.test(shell)) {
+    const q = (v) => `'${String(v).replace(/'/g, "''")}'`;
+    return entries.map(([k, v]) => v == null ? `Remove-Item Env:${k} -ErrorAction Ignore; ` : `$env:${k}=${q(v)}; `).join('') + command;
+  }
+  if (/^cmd/.test(shell)) {
+    return entries.map(([k, v]) => `set "${k}=${v ?? ''}" && `).join('') + command;
+  }
+  const q = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+  entries.sort(([, a], [, b]) => (a == null ? 0 : 1) - (b == null ? 0 : 1)); // env wants -u first
+  return 'env ' + entries.map(([k, v]) => v == null ? `-u ${k} ` : `${k}=${q(v)} `).join('') + command;
 }
 
 async function logout(a) {

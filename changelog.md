@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.3
+
+- Logging in or out of an account other than the selected one now acts on that account. Before, with `claudeAccounts.applyToTerminal` on, the terminal got the selected account's folder.
+- Logging in or out of the selected account reloads the window as set in `claudeAccounts.reloadBehavior`, so the Claude Code panel picks up the change.
+
 ## 2.5.2
 
 - Settings are grouped into sections (Accounts, Shared files and history, Status bar and account picker, Usage limits, Artifact preview), and every reload choice has a description.
