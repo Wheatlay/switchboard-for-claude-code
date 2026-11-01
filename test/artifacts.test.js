@@ -77,3 +77,25 @@ test('registry merges by id and keeps the newest first', () => {
   assert.strictEqual(items[0].title, 'Old'); // a republish without a title keeps the old one
   assert.strictEqual(items[0].root, '/r');
 });
+
+test('LogParser reads publish_files from the artifacts MCP server', () => {
+  const p = new LogParser();
+  const dir = path.resolve('/work/site');
+  const input = { files: [{ as: 'css/a.css', path: path.join(dir, 'css', 'a.css') }, { as: 'index.html', path: path.join(dir, 'index.html') }], title: 'Site' };
+  p.feed({ cwd: '/elsewhere', message: { content: [{ type: 'tool_use', name: 'mcp__claude-artifacts__publish_files', id: 'm1', input }] } }, 'Work');
+  const json = JSON.stringify({ slug: 'f12c', title: 'Site', url: 'https://claude.ai/artifact/XYZ', version: '1' });
+  const out = p.feed(result('m1', [{ type: 'text', text: json + 'Once this session’s watch {connects}' }]), 'Work');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].id, 'XYZ');
+  assert.strictEqual(out[0].title, 'Site');
+  assert.strictEqual(out[0].root, dir);
+  assert.strictEqual(out[0].entry, 'index.html');
+});
+
+test('LogParser skips a failed publish_files and other MCP tools', () => {
+  const p = new LogParser();
+  p.feed({ message: { content: [{ type: 'tool_use', name: 'mcp__claude-artifacts__publish_files', id: 'm2', input: { files: [{ as: 'index.html', path: '/x/index.html' }] } }] } }, 'Work');
+  p.feed({ message: { content: [{ type: 'tool_use', name: 'mcp__claude-artifacts__guide', id: 'm3', input: {} }] } }, 'Work');
+  assert.deepStrictEqual(p.feed(result('m2', [{ type: 'text', text: 'conflict' }], { is_error: true }), 'Work'), []);
+  assert.deepStrictEqual(p.feed(result('m3', [{ type: 'text', text: '{"url":"https://claude.ai/artifact/N"}' }]), 'Work'), []);
+});

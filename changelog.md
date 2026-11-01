@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.4
+
+- Artifact preview also picks up pages published with the artifacts connector (`publish_files`), not only the built-in Artifact tool. The page is served from the folder of its published files.
+
 ## 2.5.3
 
 - Logging in or out of an account other than the selected one now acts on that account. Before, with `claudeAccounts.applyToTerminal` on, the terminal got the selected account's folder.
