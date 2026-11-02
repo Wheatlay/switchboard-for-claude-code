@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.5
+
+- Log in and log out work without `claude` on PATH: when it is missing, the CLI bundled with the Claude Code extension is used. If neither is found, a clear error replaces a failing terminal.
+- Creating an account with an isolated profile now says that CLAUDE.md, agents, skills and settings from `~/.claude` do not apply to it, and offers to switch it to a shared profile.
+
 ## 2.5.4
 
 - Artifact preview also picks up pages published with the artifacts connector (`publish_files`), not only the built-in Artifact tool. The page is served from the folder of its published files.

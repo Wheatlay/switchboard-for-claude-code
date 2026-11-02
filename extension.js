@@ -1070,7 +1070,7 @@ async function pickMode() {
       },
       {
         label: '$(lock) ' + t('Isolated profile'),
-        detail: t('Configuration, history and login fully separate. ~/.claude is not touched.'),
+        detail: t('Configuration, history and login fully separate. CLAUDE.md, agents, skills and settings.json from ~/.claude do not apply to this account.'),
         mode: 'isolated',
       },
     ],
@@ -1081,7 +1081,41 @@ async function pickMode() {
 
 const loginTerminals = new Set();
 
+function onPath(name) {
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+  return (process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .some((d) => exts.some((e) => fs.existsSync(path.join(d, name + e))));
+}
+
+// The CLI bundled with the Claude Code extension, for machines without `claude` on PATH.
+function bundledClaude() {
+  const cc = vscode.extensions.getExtension('anthropic.claude-code');
+  if (!cc) return null;
+  const p = path.join(cc.extensionPath, 'resources', 'native-binary', process.platform === 'win32' ? 'claude.exe' : 'claude');
+  return fs.existsSync(p) ? p : null;
+}
+
+// A command starting with a bare `claude` runs the extension's binary when `claude` is not on PATH.
+// Returns null when no CLI can be found.
+function resolveClaudeCommand(command) {
+  if (!/^claude(\s|$)/.test(command) || onPath('claude')) return command;
+  const bin = bundledClaude();
+  if (!bin) return null;
+  const shell = path.basename(vscode.env.shell || '').toLowerCase();
+  const exe = /^(pwsh|powershell)/.test(shell) ? `& '${bin.replace(/'/g, "''")}'`
+    : /^cmd/.test(shell) ? `"${bin}"`
+    : `'${bin.replace(/'/g, `'\\''`)}'`;
+  log.info(`claude is not on PATH, using the Claude Code extension's CLI: ${bin}`);
+  return exe + command.slice('claude'.length);
+}
+
 function loginTerminal(account, command = cfg('loginCommand'), title = t('Claude login: {0}', account.name)) {
+  const resolved = resolveClaudeCommand(command);
+  if (!resolved) {
+    vscode.window.showErrorMessage(t('Claude CLI not found: `claude` is not on PATH and the Claude Code extension is not installed. Install the extension or set claudeAccounts.loginCommand to the full path of the CLI.'));
+    return;
+  }
+  command = resolved;
   const env = desiredEnv(account);
   if (!account.dir) env.CLAUDE_CONFIG_DIR = ORIGINAL_ENV ?? null;
   const term = vscode.window.createTerminal({ name: title, env });
@@ -1215,11 +1249,15 @@ async function cmdAdd() {
 
   const account = findAccount(id);
   const loginBtn = t('Log in');
+  const sharedBtn = t('Switch to shared profile');
+  if (mode === 'isolated') summary += ' ' + t('It does not use CLAUDE.md, agents, skills or settings from ~/.claude.');
   const res = await vscode.window.showInformationMessage(
     t('Account "{0}" created at {1}.{2} Log in now?', account.name, dir, summary),
     loginBtn,
+    ...(mode === 'isolated' ? [sharedBtn] : []),
     t('Later')
   );
+  if (res === sharedBtn) { await toShared(account); return; }
   if (res === loginBtn) loginTerminal(account);
 }
 

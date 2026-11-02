@@ -36,7 +36,6 @@
   "Shared profile": "Perfil compartilhado",
   "Uses the same configuration as ~/.claude (settings, CLAUDE.md, agents, commands, skills...). Login and history stay separate. Changes to that configuration apply to every shared account.": "Usa as mesmas configurações do ~/.claude (settings, CLAUDE.md, agents, commands, skills…). Login e histórico ficam separados. Alterações nessas configurações valem para todas as contas compartilhadas.",
   "Isolated profile": "Perfil isolado",
-  "Configuration, history and login fully separate. ~/.claude is not touched.": "Configurações, histórico e login totalmente separados. O ~/.claude não é tocado.",
   "How should this account handle configuration?": "Como esta conta deve tratar as configurações?",
   "Claude login: {0}": "Login Claude: {0}",
   "Add account...": "Adicionar conta…",
@@ -173,5 +172,8 @@
   "All artifacts in the browser": "Todos os artefatos no navegador",
   "Artifacts published by Claude Code, previewed locally (no claude.ai login needed)": "Artefatos publicados pelo Claude Code, vistos localmente (sem login no claude.ai)",
   "Artifacts (local preview)": "Artefatos (prévia local)",
-  "Show logs": "Mostrar logs"
+  "Show logs": "Mostrar logs",
+  "Configuration, history and login fully separate. CLAUDE.md, agents, skills and settings.json from ~/.claude do not apply to this account.": "Configurações, histórico e login totalmente separados. CLAUDE.md, agentes, skills e settings.json do ~/.claude não se aplicam a esta conta.",
+  "It does not use CLAUDE.md, agents, skills or settings from ~/.claude.": "Ela não usa CLAUDE.md, agentes, skills nem configurações do ~/.claude.",
+  "Claude CLI not found: `claude` is not on PATH and the Claude Code extension is not installed. Install the extension or set claudeAccounts.loginCommand to the full path of the CLI.": "CLI do Claude não encontrado: `claude` não está no PATH e a extensão Claude Code não está instalada. Instale a extensão ou defina claudeAccounts.loginCommand com o caminho completo do CLI."
 }

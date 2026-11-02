@@ -27,7 +27,7 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 2. Name it and choose a profile:
    - **Shared**: reuses your settings, `CLAUDE.md`, agents, skills and plugins and keeps its own login.
    - **Isolated**: everything separate.
-3. Choose **Log in**. A terminal opens and runs `claude auth login` for that account.
+3. Choose **Log in**. A terminal opens and runs `claude auth login` for that account (with the CLI bundled in the Claude Code extension when `claude` is not on PATH).
 4. Switch any time from the status bar. The window reloads so Claude Code picks up the change.
 
 > Run `/status` in the Claude Code panel to confirm which account is active.
