@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.7
+
+- The wait for a limit reset is also checked every minute, so a long wait (a weekly reset days away) is not thrown off when the computer sleeps.
+
 ## 2.5.6
 
 - After any account switch, your last sent prompt is typed back into Claude Code (the same conversation with shared history, a new one otherwise) and copied to the clipboard. Pasted images are not carried over.

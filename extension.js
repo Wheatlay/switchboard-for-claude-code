@@ -932,9 +932,20 @@ async function cmdTestAutoContinue() {
   if (res !== 'sent') vscode.window.showWarningMessage(t('Not sent: there was keyboard/mouse input, or this window could not be brought to the front. Details in Show logs.'));
 }
 
+// Long waits (a weekly reset is days away) can drift across sleep, so the minute timer checks too.
+function checkResetReminderDue() {
+  const r = ctx.workspaceState.get(K_RESET_REMINDER);
+  if (r && Date.now() >= r.resetAt + 60e3) fireResetReminder().catch(() => null);
+}
+
+let reminderFiring = false;
 async function fireResetReminder() {
+  if (reminderFiring) return;
+  reminderFiring = true;
+  if (resetTimer) clearTimeout(resetTimer);
   const r = ctx.workspaceState.get(K_RESET_REMINDER);
   await ctx.workspaceState.update(K_RESET_REMINDER, undefined);
+  reminderFiring = false;
   if (!r) return;
   if (Date.now() - r.resetAt > 6 * 3600e3) return; // stale after a long time closed
   if (r.accountId !== selectedAccount().id) {
@@ -2043,7 +2054,7 @@ async function activate(context) {
   refreshLimits();
   watchCredentials();
   startPreview().catch(() => null);
-  const limitsTimer = setInterval(() => { watchCredentials(); refreshLimits(); }, 60e3); // also picks up new accounts
+  const limitsTimer = setInterval(() => { watchCredentials(); refreshLimits(); checkResetReminderDue(); }, 60e3); // also picks up new accounts
   const countdownTimer = setInterval(renderAccountItems, 30e3); // keeps reset countdowns current, no requests
   context.subscriptions.push({ dispose: () => { clearTimeout(usageTimer); clearInterval(limitsTimer); clearInterval(countdownTimer); unwatchCredentials(); } });
   // Prompts wait for the user, so they must not hold activation (or the setup above) back.
