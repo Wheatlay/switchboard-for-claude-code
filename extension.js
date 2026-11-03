@@ -206,7 +206,13 @@ function applyEnv(account) {
 
 async function selectAccount(account, reason, { reload = true } = {}) {
   const prev = selectedAccount();
-  if (prev.id !== account.id) await store().update(K_PREVIOUS, prev.id);
+  if (prev.id !== account.id) {
+    await store().update(K_PREVIOUS, prev.id);
+    // Survives the reload; the new window puts it back into Claude Code.
+    if (lastPrompt.trim()) {
+      await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, sessionId: lastSessionId, at: Date.now(), from: prev.name, limit: switchingForLimit });
+    }
+  }
   await store().update(K_SELECTED, account.id);
   applyEnv(account);
   log.info(`Switched ${prev.name} → ${account.name}` + (reason ? ` (${reason})` : '') + ` · reload: ${reload ? cfg('reloadBehavior') : 'offered'}`);
@@ -720,7 +726,6 @@ async function cmdShowArtifacts() {
 let lastLimitPrompt = 0;
 
 async function startLimitWatcher(context) {
-  if (!cfg('suggestSwitchOnLimit') && !cfg('autoSwitchOnLimit')) return;
   const folder = folderPath();
   if (!folder) return;
   const account = selectedAccount();
@@ -749,19 +754,215 @@ async function startLimitWatcher(context) {
 
   const onFile = async (uri) => {
     const entries = await tail.readNew(uri.fsPath);
-    for (const o of entries) { const p = promptText(o); if (p) lastPrompt = p; }
+    for (const o of entries) { const p = promptText(o); if (p) { lastPrompt = p; lastSessionId = o.sessionId || lastSessionId; } }
     // Only entries written since this window runs on this account: with shared history the session
     // files are shared, and the limit hit of the account switched away from must not count again.
     const hit = entries.find((o) => isRateLimitEntry(o) && (Date.parse(o.timestamp) || Date.now()) > watchingSince);
-    if (hit) onLimitReached(account).catch(() => null);
+    if (!hit) return;
+    if (cfg('remindOnLimitReset')) scheduleResetReminder(account, hit.sessionId || lastSessionId).catch(() => null);
+    if (cfg('suggestSwitchOnLimit') || cfg('autoSwitchOnLimit')) onLimitReached(account).catch(() => null);
   };
+  armResetReminder();
   const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(base), pattern));
   context.subscriptions.push(watcher, watcher.onDidChange(onFile), watcher.onDidCreate(onFile));
 }
 
 // The last thing the user typed (not tool results or Claude Code's own meta entries).
 let lastPrompt = '';
+let lastSessionId = '';
+let switchingForLimit = false; // set by the automatic switch, read when the switch saves the prompt
 const K_PENDING_PROMPT = 'pendingPrompt';
+const K_RESET_REMINDER = 'resetReminder';
+let resetTimer = null;
+
+// Opens a Claude Code conversation with text typed into its input box (not sent). Claude Code
+// skips the text when that session is already open in a tab, so it also goes to the clipboard.
+async function openInClaudeCode(sessionId, text) {
+  await vscode.env.clipboard.writeText(text);
+  try {
+    await vscode.commands.executeCommand('claude-vscode.editor.open', sessionId || undefined, text);
+    return true;
+  } catch (e) {
+    log.warn('Could not open Claude Code:', e?.message || e);
+    return false;
+  }
+}
+
+// When the limit resets, offer to continue the interrupted conversation. Stored per workspace,
+// so a window reload keeps it.
+// When an exhausted account is usable again: the later of its full windows' resets.
+function usableAgainAt(d) {
+  const ts = [];
+  if (d.u5 >= 100 && d.r5) ts.push(d.r5);
+  if (d.u7 >= 100 && d.r7) ts.push(d.r7);
+  return ts.length ? Math.max(...ts) : null;
+}
+
+// With auto-switch on, waits for whichever account frees up first (often another one, used up
+// earlier); otherwise for the current account.
+async function scheduleResetReminder(account, sessionId) {
+  let d = null;
+  try { d = await fetchLimits(configDirOf(account)); } catch { d = limitsCache.get(account.id)?.data || null; }
+  if (!d) return;
+  let best = { account, at: usableAgainAt(d) || (d.u7 >= 100 && d.r7 ? d.r7 : d.r5) };
+  if (cfg('autoSwitchOnLimit')) {
+    for (const a of allAccounts()) {
+      if (a.id === account.id || identityOf(a)?.loggedIn === false) continue;
+      const e = limitsCache.get(a.id);
+      if (!e?.data || e.loggedOut) continue;
+      const at = usableAgainAt(e.data);
+      if (at && at > Date.now() && (!best.at || at < best.at)) best = { account: a, at };
+    }
+  }
+  if (!best.at || best.at <= Date.now()) return;
+  await ctx.workspaceState.update(K_RESET_REMINDER, { accountId: best.account.id, sessionId, resetAt: best.at });
+  log.info(`Waiting for the reset of "${best.account.name}" at ${new Date(best.at).toISOString()}`);
+  armResetReminder();
+}
+
+// The current account is still used up (by the last limits read).
+function currentExhausted() {
+  const d = limitsCache.get(selectedAccount().id)?.data;
+  if (!d) return true;
+  const u = project(d);
+  return u.u5 >= 100 || u.u7 >= 100;
+}
+
+function armResetReminder() {
+  if (resetTimer) clearTimeout(resetTimer);
+  const r = ctx.workspaceState.get(K_RESET_REMINDER);
+  if (!r) return;
+  const delay = Math.max(0, r.resetAt + 60e3 - Date.now()); // a minute of slack after the reset
+  resetTimer = setTimeout(() => fireResetReminder().catch(() => null), Math.min(delay, 2 ** 31 - 1));
+}
+
+// Experimental (Windows): Claude Code has no command that sends a message, so this types
+// "continue" + Enter as keystrokes into its focused input. Keystrokes go to whatever window is in
+// front, so it waits until keyboard and mouse have been idle for a few minutes (anywhere on the
+// screen), brings this VS Code window to the front if another window is there, and checks both
+// again right before typing.
+const IDLE_MS = 3 * 60e3;
+const RETRY_MS = 60e3;
+const RETRY_FOR_MS = 6 * 3600e3;
+let autoContinueTimer = null;
+
+function keys(action, arg = '') {
+  return new Promise((resolve, reject) => {
+    require('child_process').execFile('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'lib', 'keys.ps1'), action, arg],
+      { windowsHide: true, timeout: 15000 }, (err, out) => (err ? reject(err) : resolve(String(out).trim())));
+  });
+}
+const userIdleMs = async () => Number(await keys('idle')) || 0;
+const sendKeysEscape = (s) => s.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Puts this window in front. The title part is the folder name VS Code shows in the title bar.
+async function raiseThisWindow() {
+  if (vscode.window.state.focused) return true;
+  const part = vscode.workspace.name || '';
+  if (!part) return false;
+  await keys('raise', part).catch(() => 'False');
+  await sleep(800);
+  return vscode.window.state.focused;
+}
+
+// Several windows waiting for the same reset take turns: one at a time holds this lock (shared by
+// all windows), and since the typed keys count as input, the next one waits for a new idle stretch.
+function takeTypingLock() {
+  const file = path.join(ctx.globalStorageUri.fsPath, 'auto-continue.lock');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    if (Date.now() - fs.statSync(file).mtimeMs > 60e3) fs.rmSync(file, { force: true }); // left by a crashed window
+  } catch { /* no lock */ }
+  try { fs.closeSync(fs.openSync(file, 'wx')); } catch { return null; }
+  return () => fs.rmSync(file, { force: true });
+}
+
+// Returns 'sent', or 'busy' when the user is active or another window is typing (try again later).
+async function autoContinue(sessionId, opts = {}) {
+  if ((await userIdleMs()) < (opts.idleMs ?? IDLE_MS)) return 'busy';
+  const release = takeTypingLock();
+  if (!release) { log.info('Auto-continue: another window is typing, waiting'); return 'busy'; }
+  try { return await typeContinue(sessionId, opts); } finally { release(); }
+}
+
+async function typeContinue(sessionId, { idleMs = IDLE_MS, open = true } = {}) {
+  if (!(await raiseThisWindow())) { log.info('Auto-continue: could not bring this VS Code window to the front'); return 'busy'; }
+  if (open) {
+    await vscode.commands.executeCommand('claude-vscode.editor.open', sessionId || undefined);
+    await sleep(2000);
+  }
+  await vscode.commands.executeCommand('claude-vscode.focus');
+  await sleep(700);
+  if (!vscode.window.state.focused || (await userIdleMs()) < idleMs) { log.info('Auto-continue: input or focus changed at the last check'); return 'busy'; }
+  await keys('type', sendKeysEscape(t('continue')) + '{ENTER}');
+  log.info(`Auto-continue: sent "continue" to session ${sessionId || '(open panel)'}`);
+  return 'sent';
+}
+
+// Tries now and then every minute until the user is idle, for up to a few hours.
+function startAutoContinue(sessionId, onSent) {
+  stopAutoContinue();
+  const until = Date.now() + RETRY_FOR_MS;
+  const tick = async () => {
+    autoContinueTimer = null;
+    const res = await autoContinue(sessionId).catch((e) => { log.warn('Auto-continue:', e?.message || e); return 'busy'; });
+    if (res === 'sent') return onSent();
+    if (Date.now() < until) autoContinueTimer = setTimeout(tick, RETRY_MS);
+    else log.info('Auto-continue: gave up, the user was never idle long enough');
+  };
+  tick();
+}
+function stopAutoContinue() {
+  if (autoContinueTimer) clearTimeout(autoContinueTimer);
+  autoContinueTimer = null;
+}
+
+// Test of the keystroke path: after a countdown, types "continue" + Enter into the Claude Code
+// panel open in this window (needs 5 s without keyboard or mouse; other windows may be in front).
+async function cmdTestAutoContinue() {
+  if (process.platform !== 'win32') return vscode.window.showWarningMessage(t('Windows only.'));
+  const ok = await vscode.window.showWarningMessage(
+    t('Test: in 10 seconds "continue" + Enter is typed into the Claude Code panel of this window, which is brought to the front if needed. Do not touch keyboard or mouse.'),
+    { modal: true }, t('Start'));
+  if (!ok) return;
+  await sleep(10000);
+  const res = await autoContinue(undefined, { idleMs: 5000, open: false }).catch((e) => { log.warn('Auto-continue test:', e?.message || e); return 'busy'; });
+  if (res !== 'sent') vscode.window.showWarningMessage(t('Not sent: there was keyboard/mouse input, or this window could not be brought to the front. Details in Show logs.'));
+}
+
+async function fireResetReminder() {
+  const r = ctx.workspaceState.get(K_RESET_REMINDER);
+  await ctx.workspaceState.update(K_RESET_REMINDER, undefined);
+  if (!r) return;
+  if (Date.now() - r.resetAt > 6 * 3600e3) return; // stale after a long time closed
+  if (r.accountId !== selectedAccount().id) {
+    // Another account freed up first: switch to it if the current one is still used up; the new
+    // window then continues the conversation (see restorePendingPrompt).
+    const target = allAccounts().find((a) => a.id === r.accountId);
+    if (!target || !cfg('autoSwitchOnLimit') || !currentExhausted()) return;
+    if (r.sessionId) lastSessionId = r.sessionId;
+    if (!lastPrompt.trim()) lastPrompt = t('continue');
+    switchingForLimit = true;
+    return selectAccount(target, t('its usage limit reset first, switched automatically'));
+  }
+  const name = selectedAccount().name;
+  const go = t('Continue');
+  if (cfg('experimental.autoContinue') && process.platform === 'win32') {
+    startAutoContinue(r.sessionId, () =>
+      vscode.window.showInformationMessage(t('The usage limit of "{0}" has reset. Sent "continue" to Claude Code (experimental).', name)));
+    const pick = await vscode.window.showInformationMessage(
+      t('The usage limit of "{0}" has reset. "continue" will be sent once keyboard and mouse are idle for 3 minutes.', name), go, t('Cancel'));
+    if (!autoContinueTimer) return; // already sent or given up
+    stopAutoContinue();
+    if (pick === go) await openInClaudeCode(r.sessionId, t('continue'));
+    return;
+  }
+  const pick = await vscode.window.showInformationMessage(
+    t('The usage limit of "{0}" has reset. Continue the interrupted conversation?', name), go);
+  if (pick === go) await openInClaudeCode(r.sessionId, t('continue'));
+}
 function promptText(o) {
   if (o?.type !== 'user' || o.isMeta || o.message?.role !== 'user') return '';
   const c = o.message.content;
@@ -787,8 +988,7 @@ async function onLimitReached(account) {
   if (!others.length) return;
   const target = cfg('autoSwitchOnLimit') && autoSwitchTarget(others);
   if (target) {
-    // Survives the reload; shown and copied by the new window.
-    if (lastPrompt.trim()) await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, at: Date.now(), from: account.name });
+    switchingForLimit = true;
     return selectAccount(target, t('usage limit reached, switched automatically'));
   }
   if (!cfg('suggestSwitchOnLimit')) return;
@@ -1188,9 +1388,21 @@ async function cmdSwitch() {
 }
 
 async function cmdMore() {
-  const items = [{ label: '$(gear) ' + t('Manage accounts...'), action: 'claudeAccounts.manage' }];
+  // "..." = opens another list or dialog; a toggle shows its state; the rest acts right away.
+  const sep = (label) => ({ label, kind: vscode.QuickPickItemKind.Separator });
+  const shared = !!cfg('shareHistory');
+  const items = [
+    sep(t('Accounts')),
+    { label: '$(gear) ' + t('Manage accounts...'), action: 'claudeAccounts.manage' },
+    {
+      label: (shared ? '$(pass-filled) ' : '$(circle-large-outline) ') + t('Shared history'),
+      description: shared ? t('on · click to turn off') : t('off · click to turn on'),
+      action: 'claudeAccounts.toggleHistorySharing',
+    },
+  ];
   if (currentRepo) {
     const d = resolveDefault();
+    items.push(sep(t('This repository')));
     items.push({
       label: '$(pin) ' + t('Set default account for this repository...'),
       description: d?.source === 'repo' ? t('now: {0}', d.account.name) : undefined,
@@ -1199,14 +1411,12 @@ async function cmdMore() {
     if (d?.source === 'repo') items.push({ label: '$(pinned-dirty) ' + t('Clear repository default'), action: 'claudeAccounts.clearRepoDefault' });
     items.push({ label: '$(list-filter) ' + t('Add default-account rule...'), action: 'claudeAccounts.addRule' });
   }
-  items.push({
-    label: '$(history) ' + (cfg('shareHistory') ? t('Stop sharing history...') : t('Share history across accounts...')),
-    action: 'claudeAccounts.toggleHistorySharing',
-  });
-  items.push({ label: '$(graph) ' + t('Token usage by account (local logs)'), action: 'claudeAccounts.showUsage' });
-  items.push({ label: '$(preview) ' + t('Artifacts (local preview)'), action: 'claudeAccounts.showArtifacts' });
   items.push(
+    sep(t('Usage')),
+    { label: '$(graph) ' + (shared ? t('Token usage (local logs)...') : t('Token usage by account (local logs)...')), action: 'claudeAccounts.showUsage' },
     { label: '$(refresh) ' + t('Refresh plan limits'), action: 'claudeAccounts.refreshLimits' },
+    sep(t('Tools')),
+    { label: '$(preview) ' + t('Artifacts (local preview)'), action: 'claudeAccounts.showArtifacts' },
     { label: '$(output) ' + t('Show logs'), action: 'claudeAccounts.showLogs' },
     { label: '$(settings) ' + t('Settings'), settings: true },
   );
@@ -1596,10 +1806,13 @@ async function cmdAddRule() {
 async function cmdShowUsage() {
   const shared = !!cfg('shareHistory');
   const targets = shared ? [selectedAccount()] : allAccounts();
-  const results = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t('Reading local session logs...') },
-    async () => Promise.all(targets.map(async (a) => ({ a, u: await computeUsage(a).catch(() => null) })))
-  );
+  // The picker opens right away and fills in when the logs are read.
+  const qp = vscode.window.createQuickPick();
+  qp.placeholder = t('Reading local session logs...');
+  qp.busy = true;
+  qp.onDidHide(() => qp.dispose());
+  qp.show();
+  const results = await Promise.all(targets.map(async (a) => ({ a, u: await computeUsage(a).catch(() => null) })));
   const usd = (s) => '$' + s.cost.toFixed(2) + (s.unpriced ? '+' : '');
   const items = results.flatMap(({ a, u }) => {
     const head = {
@@ -1623,11 +1836,11 @@ async function cmdShowUsage() {
       };
     })];
   });
-  await vscode.window.showQuickPick(items, {
-    placeHolder: shared
-      ? t('Usage cannot be split by account while history is shared.')
-      : t('Tokens recorded on this machine (local logs only; other devices are not included).'),
-  });
+  qp.items = items;
+  qp.busy = false;
+  qp.placeholder = shared
+    ? t('Usage cannot be split by account while history is shared.')
+    : t('Tokens recorded on this machine (local logs only; other devices are not included).');
 }
 
 // Finds account folders that are not registered (e.g. created by an earlier install).
@@ -1780,6 +1993,7 @@ async function activate(context) {
     reg('claudeAccounts.clearRepoDefault', cmdClearRepoDefault),
     reg('claudeAccounts.addRule', cmdAddRule),
     reg('claudeAccounts.showUsage', cmdShowUsage),
+    reg('claudeAccounts.testAutoContinue', cmdTestAutoContinue),
     reg('claudeAccounts.showArtifacts', cmdShowArtifacts),
     reg('claudeAccounts.showLogs', () => log.show()),
     { dispose: () => { stopPreview(); } },
@@ -1838,17 +2052,30 @@ async function activate(context) {
 
 let startupPrompts = Promise.resolve();
 
-// After an automatic switch: Claude Code's input box can't be filled from outside, so the
-// interrupted prompt goes to the clipboard, ready to paste.
+// After a switch: the last prompt goes back into Claude Code (the same conversation with shared
+// history, a new one otherwise) and to the clipboard. Pasted images can't be carried over.
 async function restorePendingPrompt(context) {
   const p = context.globalState.get(K_PENDING_PROMPT);
   if (!p) return;
   await context.globalState.update(K_PENDING_PROMPT, undefined);
   if (Date.now() - p.at > 10 * 60e3 || !p.text?.trim()) return;
-  await vscode.env.clipboard.writeText(p.text);
+  // Automatic switch after a limit, same conversation available: carry on in it without waiting.
+  if (p.limit && p.sessionId && cfg('shareHistory') && cfg('experimental.autoContinue') && process.platform === 'win32') {
+    const name = selectedAccount().name;
+    startAutoContinue(p.sessionId, () =>
+      vscode.window.showInformationMessage(t('Switched from "{0}" after its usage limit. Sent "continue" to Claude Code on "{1}" (experimental).', p.from, name)));
+    const go = t('Continue');
+    const pick = await vscode.window.showInformationMessage(
+      t('Switched from "{0}" after its usage limit. "continue" will be sent on "{1}" once keyboard and mouse are idle for 3 minutes.', p.from, name), go, t('Cancel'));
+    if (!autoContinueTimer) return; // already sent or given up
+    stopAutoContinue();
+    if (pick === go) await openInClaudeCode(p.sessionId, t('continue'));
+    return;
+  }
+  await openInClaudeCode(cfg('shareHistory') ? p.sessionId : undefined, p.text);
   const copy = t('Copy again');
   const res = await vscode.window.showInformationMessage(
-    t('Switched from "{0}" after its usage limit. Your last prompt is in the clipboard, paste it into Claude Code.', p.from), copy);
+    t('Switched from "{0}". Your last prompt is typed into Claude Code and in the clipboard.', p.from), copy);
   if (res === copy) await vscode.env.clipboard.writeText(p.text);
 }
 

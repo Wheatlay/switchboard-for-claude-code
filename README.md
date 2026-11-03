@@ -77,6 +77,8 @@ Switch accounts per window or per repository, and see each account's 5-hour and 
 | `claudeAccounts.artifactPreviewAutoOpen` | `true` | Open each new artifact's preview automatically. |
 | `claudeAccounts.artifactPreviewPort` | `4999` | Port of the preview. |
 | `claudeAccounts.suggestSwitchOnLimit` | `true` | Offer a switch when you hit a limit. |
+| `claudeAccounts.remindOnLimitReset` | `true` | When the limit resets, offer to continue the interrupted conversation. |
+| `claudeAccounts.experimental.autoContinue` | `false` | Experimental, Windows: after the reset, type `continue` + Enter into Claude Code by itself (only when VS Code is focused and you've been idle 3 min). |
 | `claudeAccounts.gravatar` | `false` | Gravatar pictures in the picker. |
 
 <details>

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.6
+
+- After any account switch, your last sent prompt is typed back into Claude Code (the same conversation with shared history, a new one otherwise) and copied to the clipboard. Pasted images are not carried over.
+- New `claudeAccounts.remindOnLimitReset` (on by default): when the limit resets, a notification offers to continue the interrupted conversation with `continue` typed in.
+- Experimental `claudeAccounts.experimental.autoContinue` (off, Windows only, at your own risk): after the reset, once keyboard and mouse have been idle for 3 minutes, brings the VS Code window to the front and types `continue` + Enter. Retries every minute for up to 6 hours; several windows take turns. With auto-switch and shared history, the account switched to continues right away. Command **Test auto-continue (experimental)** tries the keystrokes.
+- With auto-switch on and every account used up, the extension waits for whichever account resets first and switches to it.
+- The **More** menu is grouped (Accounts, This repository, Usage, Tools); shared history is shown as an on/off toggle, and "..." marks items that open another list.
+- **Token usage** opens at once and fills in, without a progress notification; with shared history it is named **Token usage (local logs)**.
+- Brazilian Portuguese translation removed; the UI is English only.
+- Settings are regrouped into Switching accounts, Default account per repository, Shared files and history, Usage limits, After a limit resets, Status bar and account picker, Artifact preview and Advanced; outdated descriptions are fixed.
+
 ## 2.5.5
 
 - Log in and log out work without `claude` on PATH: when it is missing, the CLI bundled with the Claude Code extension is used. If neither is found, a clear error replaces a failing terminal.
