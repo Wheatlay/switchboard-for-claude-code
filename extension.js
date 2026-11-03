@@ -754,7 +754,16 @@ async function startLimitWatcher(context) {
 
   const onFile = async (uri) => {
     const entries = await tail.readNew(uri.fsPath);
-    for (const o of entries) { const p = promptText(o); if (p) { lastPrompt = p; lastSessionId = o.sessionId || lastSessionId; } }
+    for (const o of entries) {
+      const p = promptText(o);
+      if (p) {
+        if (p.includes(KEEP_WARM_MARK)) continue; // our own ping: not the user's prompt
+        lastPrompt = p; lastSessionId = o.sessionId || lastSessionId;
+        keepWarm.pings = 0; // the user is back
+      }
+      noteCacheActivity(o);
+    }
+    if (entries.length) scheduleKeepWarm();
     // Only entries written since this window runs on this account: with shared history the session
     // files are shared, and the limit hit of the account switched away from must not count again.
     const hit = entries.find((o) => isRateLimitEntry(o) && (Date.parse(o.timestamp) || Date.now()) > watchingSince);
@@ -841,7 +850,8 @@ function armResetReminder() {
 // front, so it waits until keyboard and mouse have been idle for a few minutes (anywhere on the
 // screen), brings this VS Code window to the front if another window is there, and checks both
 // again right before typing.
-const IDLE_MS = 3 * 60e3;
+const idleMinutes = (key, def) => Math.max(0.5, Number(cfg(key)) || def) * 60e3;
+const autoContinueIdleMs = () => idleMinutes('experimental.autoContinueIdleMinutes', 3);
 const RETRY_MS = 60e3;
 const RETRY_FOR_MS = 6 * 3600e3;
 let autoContinueTimer = null;
@@ -881,13 +891,46 @@ function takeTypingLock() {
 
 // Returns 'sent', or 'busy' when the user is active or another window is typing (try again later).
 async function autoContinue(sessionId, opts = {}) {
-  if ((await userIdleMs()) < (opts.idleMs ?? IDLE_MS)) return 'busy';
+  if ((await userIdleMs()) < (opts.idleMs ?? autoContinueIdleMs())) return 'busy';
   const release = takeTypingLock();
   if (!release) { log.info('Auto-continue: another window is typing, waiting'); return 'busy'; }
   try { return await typeContinue(sessionId, opts); } finally { release(); }
 }
 
-async function typeContinue(sessionId, { idleMs = IDLE_MS, open = true } = {}) {
+// Types text + Enter without losing what the user has typed in Claude Code's input: the draft is
+// cut first (Ctrl+A, Ctrl+X), the text is sent, then the draft is pasted back. The clipboard is
+// put back as it was. If pasting back can't be confirmed, the draft stays in the clipboard and a
+// notification says so. Attached images are not text and can't be moved aside: they go with it.
+async function typeKeepingDraft(text) {
+  const saved = await vscode.env.clipboard.readText().catch(() => '');
+  const marker = `switchboard-empty-check-${Date.now()}`;
+  let draft = '';
+  try {
+    await vscode.env.clipboard.writeText(marker);
+    await keys('type', '^a^x');
+    await sleep(300);
+    const got = await vscode.env.clipboard.readText();
+    if (got !== marker) draft = got;
+    await keys('type', sendKeysEscape(text) + '{ENTER}');
+    if (!draft) return;
+    await sleep(800);
+    await vscode.env.clipboard.writeText(draft);
+    await keys('type', '^v');
+    await sleep(300);
+    // Check: the input now holds the draft again.
+    await vscode.env.clipboard.writeText(marker);
+    await keys('type', '^a^c{END}');
+    await sleep(300);
+    if ((await vscode.env.clipboard.readText()) === draft) { log.info('Auto-continue: your draft was moved aside and put back'); return; }
+    await vscode.env.clipboard.writeText(draft);
+    draft = null; // keep it in the clipboard
+    vscode.window.showWarningMessage(t('Switchboard sent a message to Claude Code while you had text typed. It could not be put back into the input box; it is in the clipboard.'));
+  } finally {
+    if (draft !== null) await vscode.env.clipboard.writeText(saved).catch(() => null);
+  }
+}
+
+async function typeContinue(sessionId, { idleMs = autoContinueIdleMs(), open = true, text = t('continue') } = {}) {
   if (!(await raiseThisWindow())) { log.info('Auto-continue: could not bring this VS Code window to the front'); return 'busy'; }
   if (open) {
     await vscode.commands.executeCommand('claude-vscode.editor.open', sessionId || undefined);
@@ -896,9 +939,52 @@ async function typeContinue(sessionId, { idleMs = IDLE_MS, open = true } = {}) {
   await vscode.commands.executeCommand('claude-vscode.focus');
   await sleep(700);
   if (!vscode.window.state.focused || (await userIdleMs()) < idleMs) { log.info('Auto-continue: input or focus changed at the last check'); return 'busy'; }
-  await keys('type', sendKeysEscape(t('continue')) + '{ENTER}');
-  log.info(`Auto-continue: sent "continue" to session ${sessionId || '(open panel)'}`);
+  await typeKeepingDraft(text);
+  log.info(`Auto-continue: sent "${text}" to session ${sessionId || '(open panel)'}`);
   return 'sent';
+}
+
+// Experimental: keeps the prompt cache of a large conversation warm while the user is away, by
+// sending a short ping shortly before the cache expires. At most a few pings after the user's
+// last prompt, since each one reads the whole context (it counts toward the plan limits).
+const KEEP_WARM_MARK = '[keep-alive]';
+const keepWarmMinContext = () => Math.max(0, Number(cfg('experimental.keepCacheWarmMinContext') ?? 100000) || 0);
+const keepWarm = { pings: 0, sessionId: '', lastAt: 0, ttlMs: 60 * 60e3, context: 0, endTurn: false, timer: null };
+
+function noteCacheActivity(o) {
+  if (o?.type === 'user' && !o.isMeta) keepWarm.endTurn = false;
+  const u = o?.type === 'assistant' && o.message?.usage;
+  if (!u) return;
+  keepWarm.lastAt = Date.parse(o.timestamp) || Date.now();
+  keepWarm.sessionId = o.sessionId || keepWarm.sessionId;
+  keepWarm.context = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+  if (u.cache_creation?.ephemeral_1h_input_tokens > 0) keepWarm.ttlMs = 60 * 60e3;
+  else if (u.cache_creation?.ephemeral_5m_input_tokens > 0) keepWarm.ttlMs = 5 * 60e3;
+  keepWarm.endTurn = o.message?.stop_reason === 'end_turn';
+}
+
+function scheduleKeepWarm() {
+  if (keepWarm.timer) clearTimeout(keepWarm.timer);
+  keepWarm.timer = null;
+  if (!cfg('experimental.keepCacheWarm') || process.platform !== 'win32' || !keepWarm.lastAt) return;
+  const due = keepWarm.lastAt + keepWarm.ttlMs - 90e3; // 90 s before expiry
+  keepWarm.timer = setTimeout(() => keepWarmTick().catch((e) => log.warn('Keep cache warm:', e?.message || e)), Math.max(0, due - Date.now()));
+}
+
+async function keepWarmTick() {
+  const max = cfg('experimental.keepCacheWarmPings') ?? 2;
+  const why =
+    keepWarm.pings >= max ? `already ${keepWarm.pings} ping(s) since your last prompt`
+    : keepWarm.context < keepWarmMinContext() ? `context is small (${keepWarm.context} tokens)`
+    : !keepWarm.endTurn ? 'Claude is not done with its turn'
+    : Date.now() > keepWarm.lastAt + keepWarm.ttlMs ? 'cache already expired'
+    : ctx.workspaceState.get(K_RESET_REMINDER) || currentExhausted() ? 'waiting for a usage limit'
+    : '';
+  if (why) { log.info(`Keep cache warm: skipped, ${why}`); return; }
+  // The user must be away: no input for 2 minutes. Then the same typing path as auto-continue.
+  const res = await autoContinue(keepWarm.sessionId, { idleMs: idleMinutes('experimental.keepCacheWarmIdleMinutes', 2), text: `${KEEP_WARM_MARK} ${t('Reply only with OK and do nothing else.')}` });
+  if (res === 'sent') { keepWarm.pings++; log.info(`Keep cache warm: ping ${keepWarm.pings}/${max}, context ${keepWarm.context} tokens`); }
+  else log.info('Keep cache warm: skipped, you are active or the window could not be brought forward');
 }
 
 // Tries now and then every minute until the user is idle, for up to a few hours.

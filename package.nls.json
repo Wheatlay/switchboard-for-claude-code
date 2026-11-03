@@ -33,7 +33,7 @@
   "cfg.suggestSwitchOnLimit": "When the current account hits its usage limit in this window, offer to switch to another account. Not used while `#claudeAccounts.autoSwitchOnLimit#` switches automatically.",
   "cfg.autoSwitchOnLimit": "When the current account hits its usage limit in this window, switch to the account with the most headroom and reload without asking. If no other account has headroom, `#claudeAccounts.suggestSwitchOnLimit#` applies.",
   "cfg.remindOnLimitReset": "When the current account hits its usage limit and you stay on it, notify when the limit resets and offer to continue: the interrupted conversation opens with `continue` typed in, and you press Enter.",
-  "cfg.experimental.autoContinue": "**Experimental, at your own risk (Windows only).** After the reset, send `continue` by itself: once keyboard and mouse have been idle for 3 minutes, this VS Code window is brought to the front and `continue` + Enter is typed into Claude Code as real keystrokes. Retries every minute for up to 6 hours; several waiting windows take turns. Keystrokes go to whatever is in front, so a window that pops up at that moment could receive them. With `#claudeAccounts.autoSwitchOnLimit#` and shared history, the account switched to continues the same conversation the same way. Needs `#claudeAccounts.remindOnLimitReset#`.",
+  "cfg.experimental.autoContinue": "**Experimental, at your own risk (Windows only).** After the reset, send `continue` by itself: once keyboard and mouse have been idle for `#claudeAccounts.experimental.autoContinueIdleMinutes#` minutes, this VS Code window is brought to the front and `continue` + Enter is typed into Claude Code as real keystrokes. Retries every minute for up to 6 hours; several waiting windows take turns. Keystrokes go to whatever is in front, so a window that pops up at that moment could receive them. With `#claudeAccounts.autoSwitchOnLimit#` and shared history, the account switched to continues the same conversation the same way. Needs `#claudeAccounts.remindOnLimitReset#`.",
   "cfg.gravatar": "Show the Gravatar of each account's e-mail in the account picker. Off by default: when on, the extension requests images from gravatar.com, sending a hash of the e-mail.",
   "color.orange": "Account color: orange.",
   "color.green": "Account color: green.",
@@ -59,5 +59,11 @@
   "cfg.section.switching": "Switching accounts",
   "cfg.section.repoDefaults": "Default account per repository",
   "cfg.section.afterReset": "After a limit resets",
-  "cfg.section.advanced": "Advanced"
+  "cfg.section.advanced": "Advanced",
+  "cfg.section.promptCache": "Prompt cache (experimental)",
+  "cfg.experimental.keepCacheWarm": "**Experimental, at your own risk (Windows only).** Keeps the prompt cache of a large conversation (at least `#claudeAccounts.experimental.keepCacheWarmMinContext#` tokens of context) warm while you are away: shortly before the cache expires, and only after keyboard and mouse have been idle for `#claudeAccounts.experimental.keepCacheWarmIdleMinutes#` minutes, this VS Code window is brought to the front and a short ping (`[keep-alive] Reply only with OK and do nothing else.`) is typed into Claude Code. Each ping reads the whole context, which counts toward your plan limits and adds two messages to the conversation, so it stops after `#claudeAccounts.experimental.keepCacheWarmPings#` pings until you send a prompt yourself. Skipped while Claude is still working or a usage limit is reached.",
+  "cfg.experimental.keepCacheWarmPings": "How many keep-alive pings at most after your last prompt. Each one keeps the cache for one more cache lifetime (5 minutes or 1 hour, as Claude Code uses it).",
+  "cfg.experimental.autoContinueIdleMinutes": "Minutes without keyboard or mouse input before `#claudeAccounts.experimental.autoContinue#` types `continue`.",
+  "cfg.experimental.keepCacheWarmMinContext": "Smallest conversation context, in tokens, that `#claudeAccounts.experimental.keepCacheWarm#` keeps warm. Smaller conversations are cheap to rebuild.",
+  "cfg.experimental.keepCacheWarmIdleMinutes": "Minutes without keyboard or mouse input before `#claudeAccounts.experimental.keepCacheWarm#` sends a ping."
 }

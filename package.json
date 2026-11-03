@@ -2,7 +2,7 @@
 	"name": "switchboard-for-claude-code",
 	"displayName": "Switchboard for Claude Code",
 	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
-	"version": "2.5.7",
+	"version": "2.5.8",
 	"publisher": "wheatlay",
 	"author": {
 		"name": "Wheatlay"
@@ -303,6 +303,15 @@
 						],
 						"markdownDescription": "%cfg.experimental.autoContinue%",
 						"order": 1
+					},
+					"claudeAccounts.experimental.autoContinueIdleMinutes": {
+						"scope": "application",
+						"type": "number",
+						"default": 3,
+						"minimum": 0.5,
+						"maximum": 60,
+						"markdownDescription": "%cfg.experimental.autoContinueIdleMinutes%",
+						"order": 2
 					}
 				}
 			},
@@ -375,9 +384,52 @@
 				}
 			},
 			{
+				"id": "claudeAccounts.promptCache",
+				"title": "%cfg.section.promptCache%",
+				"order": 7,
+				"properties": {
+					"claudeAccounts.experimental.keepCacheWarm": {
+						"scope": "application",
+						"type": "boolean",
+						"default": false,
+						"tags": [
+							"experimental"
+						],
+						"markdownDescription": "%cfg.experimental.keepCacheWarm%",
+						"order": 0
+					},
+					"claudeAccounts.experimental.keepCacheWarmPings": {
+						"scope": "application",
+						"type": "integer",
+						"default": 2,
+						"minimum": 1,
+						"maximum": 10,
+						"markdownDescription": "%cfg.experimental.keepCacheWarmPings%",
+						"order": 1
+					},
+					"claudeAccounts.experimental.keepCacheWarmMinContext": {
+						"scope": "application",
+						"type": "integer",
+						"default": 100000,
+						"minimum": 0,
+						"markdownDescription": "%cfg.experimental.keepCacheWarmMinContext%",
+						"order": 2
+					},
+					"claudeAccounts.experimental.keepCacheWarmIdleMinutes": {
+						"scope": "application",
+						"type": "number",
+						"default": 2,
+						"minimum": 0.5,
+						"maximum": 55,
+						"markdownDescription": "%cfg.experimental.keepCacheWarmIdleMinutes%",
+						"order": 3
+					}
+				}
+			},
+			{
 				"id": "claudeAccounts.advanced",
 				"title": "%cfg.section.advanced%",
-				"order": 7,
+				"order": 8,
 				"properties": {
 					"claudeAccounts.accountsRoot": {
 						"scope": "application",

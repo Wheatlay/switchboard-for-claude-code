@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.8
+
+- Experimental `claudeAccounts.experimental.keepCacheWarm` (off, Windows only, at your own risk): while you are away, keeps the prompt cache of a large conversation warm with a short `[keep-alive]` ping shortly before the cache expires. At most `keepCacheWarmPings` pings (default 2) after your last prompt; only for contexts of at least `keepCacheWarmMinContext` tokens (default 100k), after `keepCacheWarmIdleMinutes` (default 2) without input, and not while Claude is working or a limit is reached.
+- Auto-continue and keep-alive pings no longer touch what you have typed in Claude Code: the draft is moved aside, the message is sent, and the draft is put back. Your clipboard is restored.
+- New `claudeAccounts.experimental.autoContinueIdleMinutes` (default 3): idle time before auto-continue types `continue`.
+
 ## 2.5.7
 
 - The wait for a limit reset is also checked every minute, so a long wait (a weekly reset days away) is not thrown off when the computer sleeps.
