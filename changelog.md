@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.9
+
+- No more repeated "not linked to these shared items: settings.json" warning. When Claude Code saves settings.json over the link, the next start relinks it silently: identical content is just relinked, a newer edit made in the account becomes the shared version (the previous one is backed up as settings.json.bak-<time>). The warning remains only when ~/.claude has the newer version.
+- Auto-continue brings the right VS Code window to the front more reliably (any title format) and logs why when it cannot.
+- Keep-alive pings are no longer scheduled for conversations whose cache already expired before VS Code started.
+
 ## 2.5.8
 
 - Experimental `claudeAccounts.experimental.keepCacheWarm` (off, Windows only, at your own risk): while you are away, keeps the prompt cache of a large conversation warm with a short `[keep-alive]` ping shortly before the cache expires. At most `keepCacheWarmPings` pings (default 2) after your last prompt; only for contexts of at least `keepCacheWarmMinContext` tokens (default 100k), after `keepCacheWarmIdleMinutes` (default 2) without input, and not while Claude is working or a limit is reached.

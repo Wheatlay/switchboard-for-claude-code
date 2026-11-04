@@ -26,22 +26,37 @@ public static class SbWin {
     return (uint)Environment.TickCount - l.dwTime;
   }
 
-  public static bool Raise(string part) {
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+  // Any visible window of a Code.exe process whose title contains the folder name (the title
+  // format is configurable, so its ending is not checked). Returns ok / notfound / refused.
+  public static string Raise(string part) {
     IntPtr found = IntPtr.Zero;
     EnumWindows((h, p) => {
       if (!IsWindowVisible(h)) return true;
       StringBuilder s = new StringBuilder(512); GetWindowText(h, s, 512);
-      string t = s.ToString();
-      if (t.EndsWith("Visual Studio Code") && t.Contains(part)) { found = h; return false; }
-      return true;
+      if (!s.ToString().Contains(part)) return true;
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      try { if (System.Diagnostics.Process.GetProcessById((int)pid).ProcessName != "Code") return true; } catch { return true; }
+      found = h; return false;
     }, IntPtr.Zero);
-    if (found == IntPtr.Zero) return false;
+    if (found == IntPtr.Zero) return "notfound";
     if (IsIconic(found)) ShowWindow(found, 9); // SW_RESTORE
-    // Windows only lets the foreground process hand over focus; a synthetic Alt press unlocks it.
+    // Windows only lets the foreground thread hand over focus: borrow its input state and press
+    // Alt, which both unlock SetForegroundWindow.
+    uint dummy;
+    uint fg = GetWindowThreadProcessId(GetForegroundWindow(), out dummy);
+    uint me = GetCurrentThreadId();
+    bool attached = fg != me && AttachThreadInput(me, fg, true);
     keybd_event(0x12, 0, 0, UIntPtr.Zero);
     keybd_event(0x12, 0, 2, UIntPtr.Zero);
+    BringWindowToTop(found);
     SetForegroundWindow(found);
-    return GetForegroundWindow() == found;
+    if (attached) AttachThreadInput(me, fg, false);
+    return GetForegroundWindow() == found ? "ok" : "refused";
   }
 }
 '@

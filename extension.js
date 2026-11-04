@@ -871,9 +871,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function raiseThisWindow() {
   if (vscode.window.state.focused) return true;
   const part = vscode.workspace.name || '';
-  if (!part) return false;
-  await keys('raise', part).catch(() => 'False');
+  if (!part) { log.info('Auto-continue: no folder open, so this window cannot be found by its title'); return false; }
+  const res = await keys('raise', part).catch((e) => `error ${e?.message || e}`);
   await sleep(800);
+  if (!vscode.window.state.focused) log.info(`Auto-continue: bringing "${part}" to the front: ${res}`);
   return vscode.window.state.focused;
 }
 
@@ -968,6 +969,7 @@ function scheduleKeepWarm() {
   keepWarm.timer = null;
   if (!cfg('experimental.keepCacheWarm') || process.platform !== 'win32' || !keepWarm.lastAt) return;
   const due = keepWarm.lastAt + keepWarm.ttlMs - 90e3; // 90 s before expiry
+  if (due <= Date.now()) return; // already expired, e.g. old entries read at startup
   keepWarm.timer = setTimeout(() => keepWarmTick().catch((e) => log.warn('Keep cache warm:', e?.message || e)), Math.max(0, due - Date.now()));
 }
 
@@ -1991,6 +1993,29 @@ async function checkSharedHealth() {
   if (missing.length) {
     const r = linkItems(cur.dir, missing, { merge: true, tag: cur.id });
     log.info(`Linked items new in ~/.claude for ${cur.name}:${describe(r)}`);
+  }
+  // A shared file that a program saved atomically (write temp + rename) is now a plain file instead of
+  // the link. Claude Code does this to settings.json. Repair it quietly: identical content is just
+  // relinked; a newer edit made through the account becomes the shared version (old one backed up).
+  const src = homeClaudeDir();
+  for (const i of brokenShares(cur)) {
+    const d = path.join(cur.dir, i);
+    const s = path.join(src, i);
+    try {
+      const st = fs.lstatSync(d);
+      if (!st.isFile() || !fs.statSync(s).isFile()) continue;
+      const same = fs.readFileSync(d).equals(fs.readFileSync(s));
+      if (!same) {
+        if (st.mtimeMs <= fs.statSync(s).mtimeMs) continue; // ~/.claude is newer: ask the user
+        fs.copyFileSync(s, `${s}.bak-${timestamp()}`);
+        fs.copyFileSync(d, s);
+      }
+      fs.unlinkSync(d);
+      const r = linkItems(cur.dir, [i], { tag: cur.id });
+      log.info(`Repaired rewritten link ${i} for ${cur.name} (${same ? 'identical' : 'account edit kept, previous backed up'}):${describe(r)}`);
+    } catch (e) {
+      log.warn(`Could not repair ${i} for ${cur.name}: ${e.message}`);
+    }
   }
   const broken = brokenShares(cur);
   if (!broken.length) return;
