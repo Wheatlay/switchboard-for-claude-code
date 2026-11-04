@@ -209,6 +209,7 @@ async function selectAccount(account, reason, { reload = true } = {}) {
   if (prev.id !== account.id) {
     await store().update(K_PREVIOUS, prev.id);
     // Survives the reload; the new window puts it back into Claude Code.
+    if (!lastPrompt.trim()) readLastPrompt(prev);
     if (lastPrompt.trim()) {
       await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, sessionId: lastSessionId, at: Date.now(), from: prev.name, limit: switchingForLimit });
     }
@@ -757,7 +758,7 @@ async function startLimitWatcher(context) {
     for (const o of entries) {
       const p = promptText(o);
       if (p) {
-        if (p.includes(KEEP_WARM_MARK)) continue; // our own ping: not the user's prompt
+        if (p.includes(KEEP_WARM_MARK)) { keepWarm.pendingSince = 0; continue; } // our own ping arrived: not the user's prompt
         lastPrompt = p; lastSessionId = o.sessionId || lastSessionId;
         keepWarm.pings = 0; // the user is back
       }
@@ -783,6 +784,36 @@ let switchingForLimit = false; // set by the automatic switch, read when the swi
 const K_PENDING_PROMPT = 'pendingPrompt';
 const K_RESET_REMINDER = 'resetReminder';
 let resetTimer = null;
+
+// Fallback when the watcher saw no prompt (e.g. a new profile whose projects folder appeared or
+// was linked after startup, which the watcher can't follow): the newest session file of this
+// folder, read from its end. Only recent files (10 min), so an old conversation isn't revived.
+function readLastPrompt(account) {
+  const folder = folderPath();
+  if (!folder) return;
+  try {
+    const dir = path.join(fs.realpathSync(path.join(configDirOf(account), 'projects')), encodeProjectDir(folder));
+    const newest = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
+      .map((f) => ({ f: path.join(dir, f), m: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.m - a.m)[0];
+    if (!newest || Date.now() - newest.m > 10 * 60e3) return;
+    const size = fs.statSync(newest.f).size;
+    const len = Math.min(size, 2 * 1024 * 1024);
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(newest.f, 'r');
+    try { fs.readSync(fd, buf, 0, len, size - len); } finally { fs.closeSync(fd); }
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let o;
+      try { o = JSON.parse(lines[i]); } catch { continue; }
+      const p = promptText(o);
+      if (!p || p.includes(KEEP_WARM_MARK)) continue;
+      lastPrompt = p; lastSessionId = o.sessionId || lastSessionId;
+      log.info('Switch: last prompt read from the session file (the watcher had not seen it)');
+      return;
+    }
+  } catch { /* no sessions */ }
+}
 
 // Opens a Claude Code conversation with text typed into its input box (not sent). Claude Code
 // skips the text when that session is already open in a tab, so it also goes to the clipboard.
@@ -850,8 +881,17 @@ function armResetReminder() {
 // front, so it waits until keyboard and mouse have been idle for a few minutes (anywhere on the
 // screen), brings this VS Code window to the front if another window is there, and checks both
 // again right before typing.
-const idleMinutes = (key, def) => Math.max(0.5, Number(cfg(key)) || def) * 60e3;
-const autoContinueIdleMs = () => idleMinutes('experimental.autoContinueIdleMinutes', 3);
+// Idle times are set in seconds; the older ...Minutes settings (2.5.8) still count when the new one is unset.
+function idleSetting(name, defSec) {
+  const c = vscode.workspace.getConfiguration('claudeAccounts.experimental');
+  const sec = c.inspect(`${name}Seconds`);
+  const userSec = sec?.globalValue ?? sec?.workspaceValue;
+  const oldMin = c.get(`${name}Minutes`);
+  const s = Number(userSec ?? (oldMin != null ? oldMin * 60 : undefined) ?? defSec);
+  return Math.max(10, Number.isFinite(s) ? s : defSec) * 1e3;
+}
+const autoContinueIdleMs = () => idleSetting('autoContinueIdle', 60);
+const idleText = (ms) => (ms % 60e3 ? t('{0} s', Math.round(ms / 1e3)) : t('{0} min', ms / 60e3));
 const RETRY_MS = 60e3;
 const RETRY_FOR_MS = 6 * 3600e3;
 let autoContinueTimer = null;
@@ -895,7 +935,58 @@ async function autoContinue(sessionId, opts = {}) {
   if ((await userIdleMs()) < (opts.idleMs ?? autoContinueIdleMs())) return 'busy';
   const release = takeTypingLock();
   if (!release) { log.info('Auto-continue: another window is typing, waiting'); return 'busy'; }
-  try { return await typeContinue(sessionId, opts); } finally { release(); }
+  // Keys don't reach windows behind a screen saver: end it (without input, so the idle time
+  // stays), type, then start it again, so the screen is lit only for a few seconds.
+  let woke = false;
+  try {
+    const screen = await keys('screen').catch(() => 'ok');
+    if (screen === 'locked') { log.info('Auto-continue: the screen is locked, keys cannot be typed'); return 'busy'; }
+    if (screen === 'saver') {
+      const w = await keys('wake').catch((e) => `error ${e?.message || e}`);
+      if (w !== 'ok') { log.info(`Auto-continue: a screen saver is running and could not be ended (${w})`); return 'busy'; }
+      woke = true;
+      log.info('Auto-continue: ended the screen saver for a moment');
+      await sleep(1500);
+    }
+    return await typeContinue(sessionId, opts);
+  } finally {
+    if (woke) { await sleep(1000); await keys(cfg('experimental.afterTyping') === 'screenOff' ? 'monitoroff' : 'saver').catch(() => null); }
+    release();
+  }
+}
+
+// Experimental option: while a keep-alive ping or auto-continue is waiting, a small PowerShell
+// process holds off sleep (the screen and screen saver still turn off as usual).
+let awakeProc = null;
+function updateAwake() {
+  const need = process.platform === 'win32' && cfg('experimental.preventSleep')
+    && !!(autoContinueTimer || keepWarm.timer || (cfg('experimental.autoContinue') && ctx.workspaceState.get(K_RESET_REMINDER)));
+  if (need && !awakeProc) {
+    awakeProc = require('child_process').spawn('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'lib', 'keys.ps1'), 'awake'],
+      { windowsHide: true, stdio: 'ignore' });
+    awakeProc.on('exit', () => { awakeProc = null; });
+    log.info('Prevent sleep: on while a ping or auto-continue is waiting');
+  } else if (!need && awakeProc) {
+    awakeProc.kill();
+    awakeProc = null;
+    log.info('Prevent sleep: off');
+  }
+}
+
+// Test of the screen saver path: starts the screen saver, then types like auto-continue does.
+async function cmdTestScreenSaver() {
+  if (process.platform !== 'win32') return vscode.window.showWarningMessage(t('Windows only.'));
+  const ok = await vscode.window.showWarningMessage(
+    t('Test: the screen saver starts in 5 seconds; 5 seconds later it is ended, "continue" + Enter is typed into the Claude Code panel of this window, and the screen saver (or screen off) comes back. Do not touch keyboard or mouse; move the mouse afterwards to end it.'),
+    { modal: true }, t('Start'));
+  if (!ok) return;
+  await sleep(5000);
+  const s = await keys('saver').catch(() => 'error');
+  if (s !== 'ok') return vscode.window.showWarningMessage(t('No screen saver is set in Windows (Personalization → Lock screen → Screen saver).'));
+  await sleep(5000);
+  const res = await autoContinue(undefined, { idleMs: 5000, open: false }).catch((e) => { log.warn('Screen saver test:', e?.message || e); return 'busy'; });
+  if (res !== 'sent') vscode.window.showWarningMessage(t('Not sent: there was keyboard/mouse input, or this window could not be brought to the front. Details in Show logs.'));
 }
 
 // Types text + Enter without losing what the user has typed in Claude Code's input: the draft is
@@ -950,7 +1041,7 @@ async function typeContinue(sessionId, { idleMs = autoContinueIdleMs(), open = t
 // last prompt, since each one reads the whole context (it counts toward the plan limits).
 const KEEP_WARM_MARK = '[keep-alive]';
 const keepWarmMinContext = () => Math.max(0, Number(cfg('experimental.keepCacheWarmMinContext') ?? 100000) || 0);
-const keepWarm = { pings: 0, sessionId: '', lastAt: 0, ttlMs: 60 * 60e3, context: 0, endTurn: false, timer: null };
+const keepWarm = { pings: 0, sessionId: '', lastAt: 0, ttlMs: 60 * 60e3, context: 0, endTurn: false, timer: null, pendingSince: 0 };
 
 function noteCacheActivity(o) {
   if (o?.type === 'user' && !o.isMeta) keepWarm.endTurn = false;
@@ -968,7 +1059,8 @@ function scheduleKeepWarm() {
   if (keepWarm.timer) clearTimeout(keepWarm.timer);
   keepWarm.timer = null;
   if (!cfg('experimental.keepCacheWarm') || process.platform !== 'win32' || !keepWarm.lastAt) return;
-  const due = keepWarm.lastAt + keepWarm.ttlMs - 90e3; // 90 s before expiry
+  // 5 min before a 1 h cache expires (room for retries), 90 s before a 5 min one.
+  const due = keepWarm.lastAt + keepWarm.ttlMs - (keepWarm.ttlMs > 10 * 60e3 ? 5 * 60e3 : 90e3);
   if (due <= Date.now()) return; // already expired, e.g. old entries read at startup
   keepWarm.timer = setTimeout(() => keepWarmTick().catch((e) => log.warn('Keep cache warm:', e?.message || e)), Math.max(0, due - Date.now()));
 }
@@ -983,10 +1075,32 @@ async function keepWarmTick() {
     : ctx.workspaceState.get(K_RESET_REMINDER) || currentExhausted() ? 'waiting for a usage limit'
     : '';
   if (why) { log.info(`Keep cache warm: skipped, ${why}`); return; }
-  // The user must be away: no input for 2 minutes. Then the same typing path as auto-continue.
-  const res = await autoContinue(keepWarm.sessionId, { idleMs: idleMinutes('experimental.keepCacheWarmIdleMinutes', 2), text: `${KEEP_WARM_MARK} ${t('Reply only with OK and do nothing else.')}` });
-  if (res === 'sent') { keepWarm.pings++; log.info(`Keep cache warm: ping ${keepWarm.pings}/${max}, context ${keepWarm.context} tokens`); }
-  else log.info('Keep cache warm: skipped, you are active or the window could not be brought forward');
+  // The user must be away: no input for the set idle time. Then the same typing path as auto-continue.
+  const res = await autoContinue(keepWarm.sessionId, { idleMs: idleSetting('keepCacheWarmIdle', 60), text: `${KEEP_WARM_MARK} ${t('Reply only with OK and do nothing else.')}` });
+  if (res === 'sent') {
+    keepWarm.pings++;
+    keepWarm.pendingSince = Date.now();
+    log.info(`Keep cache warm: ping ${keepWarm.pings}/${max}, context ${keepWarm.context} tokens`);
+    // "sent" only means the keys went out: check that the ping shows up in the conversation.
+    setTimeout(() => {
+      if (!keepWarm.pendingSince) return;
+      keepWarm.pendingSince = 0;
+      keepWarm.pings--;
+      log.info('Keep cache warm: the ping did not arrive in the conversation, trying again');
+      retryKeepWarm();
+    }, 45e3);
+  } else {
+    log.info('Keep cache warm: skipped, you are active or the window could not be brought forward');
+    retryKeepWarm();
+  }
+}
+
+// Another try a minute later while the cache is still warm (pings start 5 min before expiry).
+function retryKeepWarm() {
+  if (keepWarm.timer) clearTimeout(keepWarm.timer);
+  keepWarm.timer = null;
+  if (Date.now() + 60e3 > keepWarm.lastAt + keepWarm.ttlMs - 15e3) return;
+  keepWarm.timer = setTimeout(() => keepWarmTick().catch((e) => log.warn('Keep cache warm:', e?.message || e)), 60e3);
 }
 
 // Tries now and then every minute until the user is idle, for up to a few hours.
@@ -1052,7 +1166,7 @@ async function fireResetReminder() {
     startAutoContinue(r.sessionId, () =>
       vscode.window.showInformationMessage(t('The usage limit of "{0}" has reset. Sent "continue" to Claude Code (experimental).', name)));
     const pick = await vscode.window.showInformationMessage(
-      t('The usage limit of "{0}" has reset. "continue" will be sent once keyboard and mouse are idle for 3 minutes.', name), go, t('Cancel'));
+      t('The usage limit of "{0}" has reset. "continue" will be sent once keyboard and mouse are idle for {1}.', name, idleText(autoContinueIdleMs())), go, t('Cancel'));
     if (!autoContinueTimer) return; // already sent or given up
     stopAutoContinue();
     if (pick === go) await openInClaudeCode(r.sessionId, t('continue'));
@@ -2116,6 +2230,7 @@ async function activate(context) {
     reg('claudeAccounts.addRule', cmdAddRule),
     reg('claudeAccounts.showUsage', cmdShowUsage),
     reg('claudeAccounts.testAutoContinue', cmdTestAutoContinue),
+    reg('claudeAccounts.testScreenSaver', cmdTestScreenSaver),
     reg('claudeAccounts.showArtifacts', cmdShowArtifacts),
     reg('claudeAccounts.showLogs', () => log.show()),
     { dispose: () => { stopPreview(); } },
@@ -2167,6 +2282,8 @@ async function activate(context) {
   startPreview().catch(() => null);
   const limitsTimer = setInterval(() => { watchCredentials(); refreshLimits(); checkResetReminderDue(); }, 60e3); // also picks up new accounts
   const countdownTimer = setInterval(renderAccountItems, 30e3); // keeps reset countdowns current, no requests
+  const awakeTimer = setInterval(updateAwake, 20e3);
+  context.subscriptions.push({ dispose: () => { clearInterval(awakeTimer); if (awakeProc) awakeProc.kill(); } });
   context.subscriptions.push({ dispose: () => { clearTimeout(usageTimer); clearInterval(limitsTimer); clearInterval(countdownTimer); unwatchCredentials(); } });
   // Prompts wait for the user, so they must not hold activation (or the setup above) back.
   startupPrompts = runStartupPrompts(context);
@@ -2188,7 +2305,7 @@ async function restorePendingPrompt(context) {
       vscode.window.showInformationMessage(t('Switched from "{0}" after its usage limit. Sent "continue" to Claude Code on "{1}" (experimental).', p.from, name)));
     const go = t('Continue');
     const pick = await vscode.window.showInformationMessage(
-      t('Switched from "{0}" after its usage limit. "continue" will be sent on "{1}" once keyboard and mouse are idle for 3 minutes.', p.from, name), go, t('Cancel'));
+      t('Switched from "{0}" after its usage limit. "continue" will be sent on "{1}" once keyboard and mouse are idle for {2}.', p.from, name, idleText(autoContinueIdleMs())), go, t('Cancel'));
     if (!autoContinueTimer) return; // already sent or given up
     stopAutoContinue();
     if (pick === go) await openInClaudeCode(p.sessionId, t('continue'));

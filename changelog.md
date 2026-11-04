@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.10
+
+- Idle times are now set in seconds: `experimental.autoContinueIdleSeconds` (default 60) and `experimental.keepCacheWarmIdleSeconds` (default 60). Values set in the old ...IdleMinutes settings are still used until you set the new ones.
+- The auto-continue notifications show the idle time you set instead of a fixed 3 minutes.
+- Switching profiles carries your last prompt over even when Switchboard had not seen it while typing (e.g. a new profile whose projects folder appeared or was linked after VS Code started): it is read from the newest session file of the folder.
+- Keep-alive pings and auto-continue work behind a screen saver (one without a password): it is ended for a few seconds without counting as input, the message is typed, and the screen saver starts again. A locked screen is skipped and logged.
+- Keep-alive checks that the ping arrived in the conversation and tries again a minute later if it did not. Pings start 5 minutes before a 1-hour cache expires, which leaves room for retries.
+- New `experimental.afterTyping`: after typing behind a screen saver, bring the screen saver back (default) or turn the screen off.
+- New `experimental.preventSleep` (off): keeps the computer from sleeping while a ping or auto-continue is waiting.
+- New command **Test auto-continue behind the screen saver (experimental)**.
+
 ## 2.5.9
 
 - No more repeated "not linked to these shared items: settings.json" warning. When Claude Code saves settings.json over the link, the next start relinks it silently: identical content is just relinked, a newer edit made in the account becomes the shared version (the previous one is backed up as settings.json.bak-<time>). The warning remains only when ~/.claude has the newer version.

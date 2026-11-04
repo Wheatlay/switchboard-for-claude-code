@@ -2,7 +2,7 @@
 	"name": "switchboard-for-claude-code",
 	"displayName": "Switchboard for Claude Code",
 	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
-	"version": "2.5.9",
+	"version": "2.5.10",
 	"publisher": "wheatlay",
 	"author": {
 		"name": "Wheatlay"
@@ -102,6 +102,11 @@
 			{
 				"command": "claudeAccounts.testAutoContinue",
 				"title": "Test auto-continue (experimental)",
+				"category": "Claude Accounts"
+			},
+			{
+				"command": "claudeAccounts.testScreenSaver",
+				"title": "Test auto-continue behind the screen saver (experimental)",
 				"category": "Claude Accounts"
 			},
 			{
@@ -304,13 +309,13 @@
 						"markdownDescription": "%cfg.experimental.autoContinue%",
 						"order": 1
 					},
-					"claudeAccounts.experimental.autoContinueIdleMinutes": {
+					"claudeAccounts.experimental.autoContinueIdleSeconds": {
 						"scope": "application",
 						"type": "number",
-						"default": 3,
-						"minimum": 0.5,
-						"maximum": 60,
-						"markdownDescription": "%cfg.experimental.autoContinueIdleMinutes%",
+						"default": 60,
+						"minimum": 10,
+						"maximum": 3600,
+						"markdownDescription": "%cfg.experimental.autoContinueIdleSeconds%",
 						"order": 2
 					}
 				}
@@ -415,14 +420,29 @@
 						"markdownDescription": "%cfg.experimental.keepCacheWarmMinContext%",
 						"order": 2
 					},
-					"claudeAccounts.experimental.keepCacheWarmIdleMinutes": {
+					"claudeAccounts.experimental.keepCacheWarmIdleSeconds": {
 						"scope": "application",
 						"type": "number",
-						"default": 2,
-						"minimum": 0.5,
-						"maximum": 55,
-						"markdownDescription": "%cfg.experimental.keepCacheWarmIdleMinutes%",
+						"default": 60,
+						"minimum": 10,
+						"maximum": 3300,
+						"markdownDescription": "%cfg.experimental.keepCacheWarmIdleSeconds%",
 						"order": 3
+					},
+					"claudeAccounts.experimental.afterTyping": {
+						"scope": "application",
+						"type": "string",
+						"enum": ["screenSaver", "screenOff"],
+						"default": "screenSaver",
+						"markdownDescription": "%cfg.experimental.afterTyping%",
+						"order": 4
+					},
+					"claudeAccounts.experimental.preventSleep": {
+						"scope": "application",
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%cfg.experimental.preventSleep%",
+						"order": 5
 					}
 				}
 			},
