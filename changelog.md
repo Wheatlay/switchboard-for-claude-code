@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.12
+
+- `experimental.preventSleep`: the helper that holds off sleep ends by itself if VS Code crashes or is killed, so the computer can sleep again.
+
 ## 2.5.11
 
 - Fix: auto-continue and keep-alive pings no longer give up when the VS Code window has to be brought to the front. The Alt press used for that counted as your input and failed the last idle check.

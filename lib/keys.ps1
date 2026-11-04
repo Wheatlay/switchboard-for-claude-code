@@ -120,7 +120,8 @@ switch ($Action) {
   # Keeps the computer from sleeping (the screen may still turn off) while this process runs.
   'awake' {
     [void][SbWin]::SetThreadExecutionState([uint32]2147483649) # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
-    while ($true) { Start-Sleep -Seconds 3600 }
+    # Ends by itself when the VS Code process that started it is gone (crash, kill).
+    while (-not $Arg -or (Get-Process -Id ([int]$Arg) -ErrorAction SilentlyContinue)) { Start-Sleep -Seconds 30 }
   }
   # Starts the screen saver again right away.
   'saver' {

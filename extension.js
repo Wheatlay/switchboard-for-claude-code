@@ -967,7 +967,7 @@ function updateAwake() {
     && !!(autoContinueTimer || keepWarm.timer || (cfg('experimental.autoContinue') && ctx.workspaceState.get(K_RESET_REMINDER)));
   if (need && !awakeProc) {
     awakeProc = require('child_process').spawn('powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'lib', 'keys.ps1'), 'awake'],
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'lib', 'keys.ps1'), 'awake', String(process.pid)],
       { windowsHide: true, stdio: 'ignore' });
     awakeProc.on('exit', () => { awakeProc = null; });
     log.info('Prevent sleep: on while a ping or auto-continue is waiting');
