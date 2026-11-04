@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.11
+
+- Fix: auto-continue and keep-alive pings no longer give up when the VS Code window has to be brought to the front. The Alt press used for that counted as your input and failed the last idle check.
+- The log says when auto-continue starts waiting for you to be idle.
+
 ## 2.5.10
 
 - Idle times are now set in seconds: `experimental.autoContinueIdleSeconds` (default 60) and `experimental.keepCacheWarmIdleSeconds` (default 60). Values set in the old ...IdleMinutes settings are still used until you set the new ones.

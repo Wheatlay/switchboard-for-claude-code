@@ -908,11 +908,15 @@ const sendKeysEscape = (s) => s.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Puts this window in front. The title part is the folder name VS Code shows in the title bar.
+// Raising presses Alt, which Windows counts as input: raisedAt lets the last check ignore it.
+let raisedAt = 0;
 async function raiseThisWindow() {
+  raisedAt = 0;
   if (vscode.window.state.focused) return true;
   const part = vscode.workspace.name || '';
   if (!part) { log.info('Auto-continue: no folder open, so this window cannot be found by its title'); return false; }
   const res = await keys('raise', part).catch((e) => `error ${e?.message || e}`);
+  raisedAt = Date.now();
   await sleep(800);
   if (!vscode.window.state.focused) log.info(`Auto-continue: bringing "${part}" to the front: ${res}`);
   return vscode.window.state.focused;
@@ -1030,7 +1034,10 @@ async function typeContinue(sessionId, { idleMs = autoContinueIdleMs(), open = t
   }
   await vscode.commands.executeCommand('claude-vscode.focus');
   await sleep(700);
-  if (!vscode.window.state.focused || (await userIdleMs()) < idleMs) { log.info('Auto-continue: input or focus changed at the last check'); return 'busy'; }
+  // Only input after the raise counts (its own Alt press is not the user).
+  const needIdle = raisedAt ? Math.min(idleMs, Date.now() - raisedAt - 500) : idleMs;
+  if (!vscode.window.state.focused) { log.info('Auto-continue: this window lost focus at the last check'); return 'busy'; }
+  if ((await userIdleMs()) < needIdle) { log.info('Auto-continue: keyboard or mouse input at the last check'); return 'busy'; }
   await typeKeepingDraft(text);
   log.info(`Auto-continue: sent "${text}" to session ${sessionId || '(open panel)'}`);
   return 'sent';
@@ -1107,8 +1114,10 @@ function retryKeepWarm() {
 function startAutoContinue(sessionId, onSent) {
   stopAutoContinue();
   const until = Date.now() + RETRY_FOR_MS;
+  let logged = false;
   const tick = async () => {
     autoContinueTimer = null;
+    if (!logged) { logged = true; log.info(`Auto-continue: waiting until keyboard and mouse are idle for ${Math.round(autoContinueIdleMs() / 1e3)} s, checking every minute`); }
     const res = await autoContinue(sessionId).catch((e) => { log.warn('Auto-continue:', e?.message || e); return 'busy'; });
     if (res === 'sent') return onSent();
     if (Date.now() < until) autoContinueTimer = setTimeout(tick, RETRY_MS);
