@@ -1197,7 +1197,7 @@ async function fireResetReminder() {
   const go = t('Continue');
   if (cfg('experimental.autoContinue') && process.platform === 'win32') {
     startAutoContinue(r.sessionId, () =>
-      vscode.window.showInformationMessage(t('The usage limit of "{0}" has reset. Sent "continue" to Claude Code (experimental).', name)));
+      vscode.window.setStatusBarMessage(t('The usage limit of "{0}" has reset. Sent "continue" to Claude Code (experimental).', name), 15e3));
     const pick = await vscode.window.showInformationMessage(
       t('The usage limit of "{0}" has reset. "continue" will be sent once keyboard and mouse are idle for {1}.', name, idleText(autoContinueIdleMs())), go, t('Cancel'));
     if (!autoContinueTimer) return; // already sent or given up
@@ -1994,7 +1994,7 @@ async function cmdSetRepoDefault() {
   await ctx.workspaceState.update(K_LAST_APPLIED, acc.id);
   updateStatus();
   if (selectedAccount().id !== acc.id) await selectAccount(acc, t('repository default'));
-  else vscode.window.showInformationMessage(t('"{0}" is now the default account for this repository.', acc.name));
+  else vscode.window.setStatusBarMessage(t('"{0}" is now the default account for this repository.', acc.name), 10e3);
 }
 
 async function cmdClearRepoDefault() {
@@ -2005,7 +2005,7 @@ async function cmdClearRepoDefault() {
   await saveRepoDefaults(map);
   await ctx.workspaceState.update(K_LAST_APPLIED, undefined);
   updateStatus();
-  vscode.window.showInformationMessage(t('Default account for this repository removed.'));
+  vscode.window.setStatusBarMessage(t('Default account for this repository removed.'), 10e3);
 }
 
 async function cmdAddRule() {
@@ -2338,7 +2338,7 @@ async function restorePendingPrompt(context) {
   if (p.limit && p.sessionId && cfg('shareHistory') && cfg('experimental.autoContinue') && process.platform === 'win32') {
     const name = selectedAccount().name;
     startAutoContinue(p.sessionId, () =>
-      vscode.window.showInformationMessage(t('Switched from "{0}" after its usage limit. Sent "continue" to Claude Code on "{1}" (experimental).', p.from, name)));
+      vscode.window.setStatusBarMessage(t('Switched from "{0}" after its usage limit. Sent "continue" to Claude Code on "{1}" (experimental).', p.from, name), 15e3));
     const go = t('Continue');
     const pick = await vscode.window.showInformationMessage(
       t('Switched from "{0}" after its usage limit. "continue" will be sent on "{1}" once keyboard and mouse are idle for {2}.', p.from, name, idleText(autoContinueIdleMs())), go, t('Cancel'));
@@ -2348,10 +2348,10 @@ async function restorePendingPrompt(context) {
     return;
   }
   await openInClaudeCode(cfg('shareHistory') ? p.sessionId : undefined, p.text);
-  const copy = t('Copy again');
-  const res = await vscode.window.showInformationMessage(
-    t('Switched from "{0}". Your last prompt is typed into Claude Code and in the clipboard.', p.from), copy);
-  if (res === copy) await vscode.env.clipboard.writeText(p.text);
+  // Status bar only: a notification here doubled up with Claude Code's own one when the
+  // conversation was already open in a tab.
+  vscode.window.setStatusBarMessage(
+    t('$(clippy) Switched from "{0}". Last prompt is in the clipboard.', p.from), 15e3);
 }
 
 async function runStartupPrompts(context) {

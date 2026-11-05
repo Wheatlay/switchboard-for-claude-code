@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.14
+
+- Fewer notifications: after a switch the "last prompt" note and simple confirmations (sent "continue", repository default set or removed) show briefly in the status bar instead of as pop-ups.
+
 ## 2.5.13
 
 - Shared-profile accounts get the MCP servers from your default profile (`~/.claude.json`). They are copied when an account is added, relinked or switched to a shared profile, and again at startup. Only missing servers are added; an account's own servers are never changed or removed.
