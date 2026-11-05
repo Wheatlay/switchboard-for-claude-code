@@ -372,6 +372,30 @@ function linkItems(dir, items, { replaceLocal = false, merge = false, tag = 'acc
 const linkSharedItems = (dir, opts) => linkItems(dir, configItems(), opts);
 const linkHistory = (dir, tag) => linkItems(dir, historyItems(), { merge: true, tag });
 
+// User-scope MCP servers live in .claude.json, which stays per account (it also holds the login).
+// Copies servers the default profile has and the account lacks; never overwrites or removes.
+function syncMcpServers(dir) {
+  const src = ORIGINAL_ENV ? path.join(ORIGINAL_ENV, '.claude.json') : path.join(os.homedir(), '.claude.json');
+  const dst = path.join(dir, '.claude.json');
+  if (samePath(src, dst)) return [];
+  try {
+    const from = JSON.parse(fs.readFileSync(src, 'utf8')).mcpServers || {};
+    let to = {};
+    try { to = JSON.parse(fs.readFileSync(dst, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    const servers = to.mcpServers || {};
+    const added = Object.keys(from).filter((k) => !(k in servers));
+    if (!added.length) return [];
+    for (const k of added) servers[k] = from[k];
+    to.mcpServers = servers;
+    fs.writeFileSync(dst, JSON.stringify(to, null, 2), 'utf8');
+    log.info(`MCP servers copied to ${dir}: ${added.join(', ')}`);
+    return added;
+  } catch (e) {
+    log.warn(`MCP servers not synced to ${dir}: ${e.message}`);
+    return [];
+  }
+}
+
 // Undoes links. copy=true creates independent copies; copy=false leaves the account empty.
 function unlinkItems(dir, items, { copy = true } = {}) {
   const src = homeClaudeDir();
@@ -1673,6 +1697,7 @@ async function cmdAdd() {
   fs.mkdirSync(dir, { recursive: true });
 
   let summary = mode === 'shared' ? describe(linkSharedItems(dir)) : '';
+  if (mode === 'shared') syncMcpServers(dir);
   if (historyItems().length) { linkHistory(dir, id); summary += ' ' + t('History shared with the other accounts.'); }
   await saveRecords([...recs, { id, dir, mode }]);
   const used = new Set(allAccounts().map((a) => a.color).filter(Boolean));
@@ -1745,13 +1770,14 @@ async function toShared(a) {
   );
   if (ok !== switchBtn) return;
   const r = linkSharedItems(a.dir, { replaceLocal: true });
+  syncMcpServers(a.dir);
   await saveRecordPatch(a.id, { mode: 'shared' });
   vscode.window.showInformationMessage(t('"{0}" now uses a shared profile.', a.name) + describe(r));
 }
 
 async function relink(a) {
   let msg = '';
-  if (a.mode === 'shared') msg += describe(linkSharedItems(a.dir, { replaceLocal: true }));
+  if (a.mode === 'shared') { msg += describe(linkSharedItems(a.dir, { replaceLocal: true })); syncMcpServers(a.dir); }
   if (historyItems().length) msg += describe(linkHistory(a.dir, a.id));
   vscode.window.showInformationMessage(t('Items relinked in "{0}".', a.name) + msg);
 }
@@ -2216,6 +2242,7 @@ async function activate(context) {
   context.subscriptions.push(log);
   log.info(`Activated, version ${context.extension.packageJSON.version}`);
   migrateFromOriginal(context);
+  for (const a of getAccounts()) if (a.mode === 'shared' && a.dir) syncMcpServers(a.dir);
   // First, synchronously: set the environment before the Claude Code extension starts the CLI.
   applyEnv(selectedAccount());
 

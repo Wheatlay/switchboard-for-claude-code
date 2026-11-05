@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.13
+
+- Shared-profile accounts get the MCP servers from your default profile (`~/.claude.json`). They are copied when an account is added, relinked or switched to a shared profile, and again at startup. Only missing servers are added; an account's own servers are never changed or removed.
+
 ## 2.5.12
 
 - `experimental.preventSleep`: the helper that holds off sleep ends by itself if VS Code crashes or is killed, so the computer can sleep again.
