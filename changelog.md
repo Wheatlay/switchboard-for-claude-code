@@ -1,9 +1,9 @@
 # Changelog
 
-
 ## 2.5.16
 
 - The Continue button on the "continue will be sent once idle" notification (after a switch or a limit reset) now sends "continue" right away, even while you are using keyboard and mouse. Before, it only filled the input box, and a click during an idle check was ignored.
+
 ## 2.5.15
 
 - Switching profiles carries over only the text typed (not yet sent) in Claude Code's input box of the window (Windows). The last sent prompt is no longer copied; with an empty input nothing is carried over.
