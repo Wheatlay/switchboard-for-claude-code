@@ -209,9 +209,12 @@ async function selectAccount(account, reason, { reload = true } = {}) {
   if (prev.id !== account.id) {
     await store().update(K_PREVIOUS, prev.id);
     // Survives the reload; the new window puts it back into Claude Code.
-    if (!lastPrompt.trim()) readLastPrompt(prev);
-    if (lastPrompt.trim()) {
-      await ctx.globalState.update(K_PENDING_PROMPT, { text: lastPrompt, sessionId: lastSessionId, at: Date.now(), from: prev.name, limit: switchingForLimit });
+    // Only text typed but not sent is carried over (the automatic switch after a limit sends "continue").
+    const draft = await readDraft().catch(() => '');
+    if (draft.trim()) log.info('Switch: carrying over the text typed in Claude Code (not sent)');
+    const text = draft.trim() ? draft : (switchingForLimit ? t('continue') : '');
+    if (text) {
+      await ctx.globalState.update(K_PENDING_PROMPT, { text, sessionId: lastSessionId, at: Date.now(), from: prev.name, limit: switchingForLimit });
     }
   }
   await store().update(K_SELECTED, account.id);
@@ -783,7 +786,7 @@ async function startLimitWatcher(context) {
       const p = promptText(o);
       if (p) {
         if (p.includes(KEEP_WARM_MARK)) { keepWarm.pendingSince = 0; continue; } // our own ping arrived: not the user's prompt
-        lastPrompt = p; lastSessionId = o.sessionId || lastSessionId;
+        lastSessionId = o.sessionId || lastSessionId;
         keepWarm.pings = 0; // the user is back
       }
       noteCacheActivity(o);
@@ -801,43 +804,12 @@ async function startLimitWatcher(context) {
   context.subscriptions.push(watcher, watcher.onDidChange(onFile), watcher.onDidCreate(onFile));
 }
 
-// The last thing the user typed (not tool results or Claude Code's own meta entries).
-let lastPrompt = '';
+// The conversation the user last sent a prompt in.
 let lastSessionId = '';
 let switchingForLimit = false; // set by the automatic switch, read when the switch saves the prompt
 const K_PENDING_PROMPT = 'pendingPrompt';
 const K_RESET_REMINDER = 'resetReminder';
 let resetTimer = null;
-
-// Fallback when the watcher saw no prompt (e.g. a new profile whose projects folder appeared or
-// was linked after startup, which the watcher can't follow): the newest session file of this
-// folder, read from its end. Only recent files (10 min), so an old conversation isn't revived.
-function readLastPrompt(account) {
-  const folder = folderPath();
-  if (!folder) return;
-  try {
-    const dir = path.join(fs.realpathSync(path.join(configDirOf(account), 'projects')), encodeProjectDir(folder));
-    const newest = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
-      .map((f) => ({ f: path.join(dir, f), m: fs.statSync(path.join(dir, f)).mtimeMs }))
-      .sort((a, b) => b.m - a.m)[0];
-    if (!newest || Date.now() - newest.m > 10 * 60e3) return;
-    const size = fs.statSync(newest.f).size;
-    const len = Math.min(size, 2 * 1024 * 1024);
-    const buf = Buffer.alloc(len);
-    const fd = fs.openSync(newest.f, 'r');
-    try { fs.readSync(fd, buf, 0, len, size - len); } finally { fs.closeSync(fd); }
-    const lines = buf.toString('utf8').split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      let o;
-      try { o = JSON.parse(lines[i]); } catch { continue; }
-      const p = promptText(o);
-      if (!p || p.includes(KEEP_WARM_MARK)) continue;
-      lastPrompt = p; lastSessionId = o.sessionId || lastSessionId;
-      log.info('Switch: last prompt read from the session file (the watcher had not seen it)');
-      return;
-    }
-  } catch { /* no sessions */ }
-}
 
 // Opens a Claude Code conversation with text typed into its input box (not sent). Claude Code
 // skips the text when that session is already open in a tab, so it also goes to the clipboard.
@@ -1050,6 +1022,27 @@ async function typeKeepingDraft(text) {
   }
 }
 
+// What is typed (not sent) in Claude Code's input box of this window: focus it, Ctrl+A, Ctrl+C.
+// Nothing is changed in the input; the clipboard is put back. Windows only, and only when this
+// window is in front (keys go to the foreground window).
+async function readDraft() {
+  if (process.platform !== 'win32' || !vscode.window.state.focused) return '';
+  const saved = await vscode.env.clipboard.readText().catch(() => '');
+  const marker = `switchboard-draft-check-${Date.now()}`;
+  try {
+    await vscode.env.clipboard.writeText(marker);
+    await vscode.commands.executeCommand('claude-vscode.focus');
+    await sleep(500);
+    if (!vscode.window.state.focused) return '';
+    await keys('type', '^a^c{END}');
+    await sleep(300);
+    const got = await vscode.env.clipboard.readText();
+    return got === marker ? '' : got;
+  } finally {
+    await vscode.env.clipboard.writeText(saved).catch(() => null);
+  }
+}
+
 async function typeContinue(sessionId, { idleMs = autoContinueIdleMs(), open = true, text = t('continue') } = {}) {
   if (!(await raiseThisWindow())) { log.info('Auto-continue: could not bring this VS Code window to the front'); return 'busy'; }
   if (open) {
@@ -1189,7 +1182,6 @@ async function fireResetReminder() {
     const target = allAccounts().find((a) => a.id === r.accountId);
     if (!target || !cfg('autoSwitchOnLimit') || !currentExhausted()) return;
     if (r.sessionId) lastSessionId = r.sessionId;
-    if (!lastPrompt.trim()) lastPrompt = t('continue');
     switchingForLimit = true;
     return selectAccount(target, t('its usage limit reset first, switched automatically'));
   }
@@ -2327,7 +2319,7 @@ async function activate(context) {
 
 let startupPrompts = Promise.resolve();
 
-// After a switch: the last prompt goes back into Claude Code (the same conversation with shared
+// After a switch: the text typed before it goes back into Claude Code (the same conversation with shared
 // history, a new one otherwise) and to the clipboard. Pasted images can't be carried over.
 async function restorePendingPrompt(context) {
   const p = context.globalState.get(K_PENDING_PROMPT);
@@ -2351,7 +2343,7 @@ async function restorePendingPrompt(context) {
   // Status bar only: a notification here doubled up with Claude Code's own one when the
   // conversation was already open in a tab.
   vscode.window.setStatusBarMessage(
-    t('$(clippy) Switched from "{0}". Last prompt is in the clipboard.', p.from), 15e3);
+    t('$(clippy) Switched from "{0}". Your typed text is in the clipboard.', p.from), 15e3);
 }
 
 async function runStartupPrompts(context) {

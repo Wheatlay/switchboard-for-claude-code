@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.15
+
+- Switching profiles carries over only the text typed (not yet sent) in Claude Code's input box of the window (Windows). The last sent prompt is no longer copied; with an empty input nothing is carried over.
+
 ## 2.5.14
 
 - Fewer notifications: after a switch the "last prompt" note and simple confirmations (sent "continue", repository default set or removed) show briefly in the status bar instead of as pop-ups.
