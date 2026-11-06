@@ -891,6 +891,7 @@ const idleText = (ms) => (ms % 60e3 ? t('{0} s', Math.round(ms / 1e3)) : t('{0} 
 const RETRY_MS = 60e3;
 const RETRY_FOR_MS = 6 * 3600e3;
 let autoContinueTimer = null;
+let autoContinueRun = null; // { cancelled, sent, pending }: the current wait, also while a check runs
 
 function keys(action, arg = '') {
   return new Promise((resolve, reject) => {
@@ -960,7 +961,7 @@ async function autoContinue(sessionId, opts = {}) {
 let awakeProc = null;
 function updateAwake() {
   const need = process.platform === 'win32' && cfg('experimental.preventSleep')
-    && !!(autoContinueTimer || keepWarm.timer || (cfg('experimental.autoContinue') && ctx.workspaceState.get(K_RESET_REMINDER)));
+    && !!(autoContinueRun || keepWarm.timer || (cfg('experimental.autoContinue') && ctx.workspaceState.get(K_RESET_REMINDER)));
   if (need && !awakeProc) {
     awakeProc = require('child_process').spawn('powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'lib', 'keys.ps1'), 'awake', String(process.pid)],
@@ -1130,21 +1131,58 @@ function retryKeepWarm() {
 // Tries now and then every minute until the user is idle, for up to a few hours.
 function startAutoContinue(sessionId, onSent) {
   stopAutoContinue();
+  const run = { cancelled: false, sent: false, pending: null };
+  autoContinueRun = run;
   const until = Date.now() + RETRY_FOR_MS;
   let logged = false;
   const tick = async () => {
     autoContinueTimer = null;
+    if (run.cancelled) return;
     if (!logged) { logged = true; log.info(`Auto-continue: waiting until keyboard and mouse are idle for ${Math.round(autoContinueIdleMs() / 1e3)} s, checking every minute`); }
-    const res = await autoContinue(sessionId).catch((e) => { log.warn('Auto-continue:', e?.message || e); return 'busy'; });
-    if (res === 'sent') return onSent();
+    run.pending = autoContinue(sessionId).catch((e) => { log.warn('Auto-continue:', e?.message || e); return 'busy'; });
+    const res = await run.pending;
+    run.pending = null;
+    if (res === 'sent') { run.sent = true; if (autoContinueRun === run) autoContinueRun = null; return onSent(); }
+    if (run.cancelled) return;
     if (Date.now() < until) autoContinueTimer = setTimeout(tick, RETRY_MS);
-    else log.info('Auto-continue: gave up, the user was never idle long enough');
+    else { log.info('Auto-continue: gave up, the user was never idle long enough'); if (autoContinueRun === run) autoContinueRun = null; }
   };
   tick();
+  return run;
 }
 function stopAutoContinue() {
   if (autoContinueTimer) clearTimeout(autoContinueTimer);
   autoContinueTimer = null;
+  if (autoContinueRun) autoContinueRun.cancelled = true;
+  autoContinueRun = null;
+}
+
+// The notification's Continue button: the user is at the keyboard, so "continue" is sent now
+// (no idle wait). Waits for a check that may be typing already, so it is never sent twice.
+async function continueClicked(run, sessionId) {
+  stopAutoContinue();
+  if (run.pending) await run.pending;
+  if (run.sent) return;
+  if (process.platform === 'win32') {
+    const release = takeTypingLock();
+    if (release) {
+      try {
+        await vscode.commands.executeCommand('claude-vscode.editor.open', sessionId || undefined);
+        await sleep(2000);
+        await vscode.commands.executeCommand('claude-vscode.focus');
+        await sleep(700);
+        if (vscode.window.state.focused) {
+          await typeKeepingDraft(t('continue'));
+          log.info(`Continue clicked: sent "continue" to session ${sessionId || '(open panel)'}`);
+          return;
+        }
+        log.info('Continue clicked: this window is not in front, putting "continue" in the input box instead');
+      } catch (e) {
+        log.warn('Continue clicked:', e?.message || e);
+      } finally { release(); }
+    }
+  }
+  await openInClaudeCode(sessionId, t('continue'));
 }
 
 // Test of the keystroke path: after a countdown, types "continue" + Enter into the Claude Code
@@ -1188,13 +1226,13 @@ async function fireResetReminder() {
   const name = selectedAccount().name;
   const go = t('Continue');
   if (cfg('experimental.autoContinue') && process.platform === 'win32') {
-    startAutoContinue(r.sessionId, () =>
+    const run = startAutoContinue(r.sessionId, () =>
       vscode.window.setStatusBarMessage(t('The usage limit of "{0}" has reset. Sent "continue" to Claude Code (experimental).', name), 15e3));
     const pick = await vscode.window.showInformationMessage(
       t('The usage limit of "{0}" has reset. "continue" will be sent once keyboard and mouse are idle for {1}.', name, idleText(autoContinueIdleMs())), go, t('Cancel'));
-    if (!autoContinueTimer) return; // already sent or given up
+    if (run.sent || (!run.pending && autoContinueRun !== run)) return; // already sent, given up or replaced
+    if (pick === go) return continueClicked(run, r.sessionId);
     stopAutoContinue();
-    if (pick === go) await openInClaudeCode(r.sessionId, t('continue'));
     return;
   }
   const pick = await vscode.window.showInformationMessage(
@@ -2329,14 +2367,14 @@ async function restorePendingPrompt(context) {
   // Automatic switch after a limit, same conversation available: carry on in it without waiting.
   if (p.limit && p.sessionId && cfg('shareHistory') && cfg('experimental.autoContinue') && process.platform === 'win32') {
     const name = selectedAccount().name;
-    startAutoContinue(p.sessionId, () =>
+    const run = startAutoContinue(p.sessionId, () =>
       vscode.window.setStatusBarMessage(t('Switched from "{0}" after its usage limit. Sent "continue" to Claude Code on "{1}" (experimental).', p.from, name), 15e3));
     const go = t('Continue');
     const pick = await vscode.window.showInformationMessage(
       t('Switched from "{0}" after its usage limit. "continue" will be sent on "{1}" once keyboard and mouse are idle for {2}.', p.from, name, idleText(autoContinueIdleMs())), go, t('Cancel'));
-    if (!autoContinueTimer) return; // already sent or given up
+    if (run.sent || (!run.pending && autoContinueRun !== run)) return; // already sent, given up or replaced
+    if (pick === go) return continueClicked(run, p.sessionId);
     stopAutoContinue();
-    if (pick === go) await openInClaudeCode(p.sessionId, t('continue'));
     return;
   }
   await openInClaudeCode(cfg('shareHistory') ? p.sessionId : undefined, p.text);
