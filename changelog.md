@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.17
+
+- The "hit its usage limit" notice no longer appears when Anthropic's servers are temporarily limiting requests ("not your usage limit"). Only a real account limit counts.
+
 ## 2.5.16
 
 - The Continue button on the "continue will be sent once idle" notification (after a switch or a limit reset) now sends "continue" right away, even while you are using keyboard and mouse. Before, it only filled the input box, and a click during an idle check was ignored.
