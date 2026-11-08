@@ -204,17 +204,19 @@ function applyEnv(account) {
     + (others.length ? `, also ${others.join(', ')}` : '') + (cfg('applyToTerminal') ? ', terminals too' : ', not in terminals'));
 }
 
-async function selectAccount(account, reason, { reload = true } = {}) {
+// `resume`: the conversation a usage limit cut off, which the reloaded window continues with "continue".
+async function selectAccount(account, reason, { reload = true, resume = '' } = {}) {
   const prev = selectedAccount();
   if (prev.id !== account.id) {
     await store().update(K_PREVIOUS, prev.id);
-    // Survives the reload; the new window puts it back into Claude Code.
-    // Only text typed but not sent is carried over (the automatic switch after a limit sends "continue").
-    const draft = await readDraft().catch(() => '');
-    if (draft.trim()) log.info('Switch: carrying over the text typed in Claude Code (not sent)');
-    const text = draft.trim() ? draft : (switchingForLimit ? t('continue') : '');
+    // Text typed but not sent goes back into Claude Code after the reload. Kept per workspace: every
+    // window restarts on a switch, and only this one knows which conversation it belongs to.
+    let draft = await readDraft().catch(() => '');
+    if (!draft.trim()) draft = '';
+    if (draft) log.info('Switch: carrying over the text typed in Claude Code (not sent)');
+    const text = draft || (resume ? t('continue') : '');
     if (text) {
-      await ctx.globalState.update(K_PENDING_PROMPT, { text, sessionId: lastSessionId, at: Date.now(), from: prev.name, limit: switchingForLimit });
+      await ctx.workspaceState.update(K_PENDING_PROMPT, { text, sessionId: resume || lastSessionId, at: Date.now(), from: prev.name, limit: !!resume });
     }
   }
   await store().update(K_SELECTED, account.id);
@@ -511,6 +513,10 @@ async function autoApply() {
   }
   await ctx.workspaceState.update(K_LAST_APPLIED, d.account.id);
   if (selectedAccount().id === d.account.id) return;
+  if (isDrained(d.account)) {
+    log.info(`Default ${d.account.name} has its usage limit used up; keeping ${selectedAccount().name}`);
+    return;
+  }
   const reason = d.source === 'rule' ? t('rule {0}', d.pattern) : t('repository default');
   await selectAccount(d.account, reason, { reload: false });
 }
@@ -774,6 +780,7 @@ async function startLimitWatcher(context) {
   }
 
   const watchingSince = Date.now();
+  const promptedHere = new Set(); // conversations the user sent a prompt in since this window started
   const tail = new TailReader();
   const sessionDir = path.join(base, pattern.startsWith('projects/') ? 'projects' : '', encoded);
   try {
@@ -787,6 +794,7 @@ async function startLimitWatcher(context) {
       if (p) {
         if (p.includes(KEEP_WARM_MARK)) { keepWarm.pendingSince = 0; continue; } // our own ping arrived: not the user's prompt
         lastSessionId = o.sessionId || lastSessionId;
+        if ((Date.parse(o.timestamp) || Date.now()) > watchingSince) promptedHere.add(o.sessionId);
         keepWarm.pings = 0; // the user is back
       }
       noteCacheActivity(o);
@@ -796,8 +804,12 @@ async function startLimitWatcher(context) {
     // files are shared, and the limit hit of the account switched away from must not count again.
     const hit = entries.find((o) => isRateLimitEntry(o) && (Date.parse(o.timestamp) || Date.now()) > watchingSince);
     if (!hit) return;
-    if (cfg('remindOnLimitReset')) scheduleResetReminder(account, hit.sessionId || lastSessionId).catch(() => null);
-    if (cfg('suggestSwitchOnLimit') || cfg('autoSwitchOnLimit')) onLimitReached(account).catch(() => null);
+    // "continue" only makes sense when the limit cut off a prompt sent in this window since it started.
+    // A hit right at startup (Claude Code reopening a conversation on a used-up account) interrupted nothing.
+    const interrupted = promptedHere.has(hit.sessionId) ? hit.sessionId : '';
+    if (!interrupted) log.info('Limit hit, but no prompt sent here was cut off: nothing to continue');
+    if (cfg('remindOnLimitReset')) scheduleResetReminder(account, interrupted).catch(() => null);
+    if (cfg('suggestSwitchOnLimit') || cfg('autoSwitchOnLimit')) onLimitReached(account, interrupted).catch(() => null);
   };
   armResetReminder();
   const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(base), pattern));
@@ -806,7 +818,6 @@ async function startLimitWatcher(context) {
 
 // The conversation the user last sent a prompt in.
 let lastSessionId = '';
-let switchingForLimit = false; // set by the automatic switch, read when the switch saves the prompt
 const K_PENDING_PROMPT = 'pendingPrompt';
 const K_RESET_REMINDER = 'resetReminder';
 let resetTimer = null;
@@ -889,7 +900,8 @@ function idleSetting(name, defSec) {
 const autoContinueIdleMs = () => idleSetting('autoContinueIdle', 60);
 const idleText = (ms) => (ms % 60e3 ? t('{0} s', Math.round(ms / 1e3)) : t('{0} min', ms / 60e3));
 const RETRY_MS = 60e3;
-const RETRY_FOR_MS = 6 * 3600e3;
+const RETRY_FOR_MS = 6 * 3600e3; // after a reset: the user may be away for hours
+const SWITCH_CONTINUE_FOR_MS = 15 * 60e3; // after a switch: the user was just working
 let autoContinueTimer = null;
 let autoContinueRun = null; // { cancelled, sent, pending }: the current wait, also while a check runs
 
@@ -1129,11 +1141,11 @@ function retryKeepWarm() {
 }
 
 // Tries now and then every minute until the user is idle, for up to a few hours.
-function startAutoContinue(sessionId, onSent) {
+function startAutoContinue(sessionId, { forMs = RETRY_FOR_MS } = {}, onSent) {
   stopAutoContinue();
   const run = { cancelled: false, sent: false, pending: null };
   autoContinueRun = run;
-  const until = Date.now() + RETRY_FOR_MS;
+  const until = Date.now() + forMs;
   let logged = false;
   const tick = async () => {
     autoContinueTimer = null;
@@ -1219,14 +1231,13 @@ async function fireResetReminder() {
     // window then continues the conversation (see restorePendingPrompt).
     const target = allAccounts().find((a) => a.id === r.accountId);
     if (!target || !cfg('autoSwitchOnLimit') || !currentExhausted()) return;
-    if (r.sessionId) lastSessionId = r.sessionId;
-    switchingForLimit = true;
-    return selectAccount(target, t('its usage limit reset first, switched automatically'));
+    return selectAccount(target, t('its usage limit reset first, switched automatically'), { resume: r.sessionId });
   }
+  if (!r.sessionId) return; // the limit cut off no prompt: nothing to continue
   const name = selectedAccount().name;
   const go = t('Continue');
   if (cfg('experimental.autoContinue') && process.platform === 'win32') {
-    const run = startAutoContinue(r.sessionId, () =>
+    const run = startAutoContinue(r.sessionId, {}, () =>
       vscode.window.setStatusBarMessage(t('The usage limit of "{0}" has reset. Sent "continue" to Claude Code (experimental).', name), 15e3));
     const pick = await vscode.window.showInformationMessage(
       t('The usage limit of "{0}" has reset. "continue" will be sent once keyboard and mouse are idle for {1}.', name, idleText(autoContinueIdleMs())), go, t('Cancel'));
@@ -1257,15 +1268,42 @@ function autoSwitchTarget(others) {
   return others.map((a) => ({ a, w: worst(a) })).filter((x) => x.w < 100).sort((x, y) => x.w - y.w)[0]?.a;
 }
 
-async function onLimitReached(account) {
+// Known numbers only (cached from any window): an account without them is not called drained.
+function isDrained(a) {
+  const e = limitsCache.get(a.id);
+  if (!e?.data || e.loggedOut) return false;
+  const u = project(e.data);
+  return Math.max(u.u5, u.u7) >= 100;
+}
+
+// Before Claude Code starts: a window must not open on an account whose limit is used up.
+// Uses the limits other windows saved; moves to the account with the most known headroom.
+function avoidDrainedAtStartup() {
+  if (!cfg('planLimits')) return null;
+  const shared = readSharedLimits();
+  for (const a of allAccounts()) {
+    const s = shared[configDirOf(a)];
+    if (s?.entry && !limitsCache.has(a.id)) limitsCache.set(a.id, s.entry);
+  }
+  const cur = selectedAccount();
+  if (!isDrained(cur)) return null;
+  const known = allAccounts().filter((a) => a.id !== cur.id && limitsCache.get(a.id)?.data && !limitsCache.get(a.id).loggedOut);
+  const target = autoSwitchTarget(known);
+  if (!target) return null;
+  // Synchronous on purpose (the CLI may start any moment); the store write finishes on its own.
+  store().update(K_PREVIOUS, cur.id);
+  store().update(K_SELECTED, target.id);
+  return { from: cur, to: target };
+}
+
+async function onLimitReached(account, interrupted) {
   if (Date.now() - lastLimitPrompt < 20 * 60e3) return; // at most once every 20 minutes
   lastLimitPrompt = Date.now();
   const others = allAccounts().filter((a) => a.id !== account.id && identityOf(a)?.loggedIn !== false);
   if (!others.length) return;
   const target = cfg('autoSwitchOnLimit') && autoSwitchTarget(others);
   if (target) {
-    switchingForLimit = true;
-    return selectAccount(target, t('usage limit reached, switched automatically'));
+    return selectAccount(target, t('usage limit reached, switched automatically'), { resume: interrupted });
   }
   if (!cfg('suggestSwitchOnLimit')) return;
   const buttons = others.slice(0, 2).map((a) => ({ title: t('Switch to {0}', a.name), account: a }));
@@ -2274,6 +2312,7 @@ async function activate(context) {
   migrateFromOriginal(context);
   for (const a of getAccounts()) if (a.mode === 'shared' && a.dir) syncMcpServers(a.dir);
   // First, synchronously: set the environment before the Claude Code extension starts the CLI.
+  const drainedStart = avoidDrainedAtStartup();
   applyEnv(selectedAccount());
 
   context.globalState.setKeysForSync([K_META, K_REPO_DEFAULTS]);
@@ -2330,6 +2369,10 @@ async function activate(context) {
   );
 
   try { await migrate(); } catch { /* keep going */ }
+  if (drainedStart) {
+    log.info(`Startup: ${drainedStart.from.name} has its usage limit used up; started on ${drainedStart.to.name} instead`);
+    vscode.window.setStatusBarMessage(t('"{0}" hit its usage limit; started on "{1}".', drainedStart.from.name, drainedStart.to.name), 15e3);
+  }
   updateStatus();
   currentRepo = await detectRepo();
   updateStatus();
@@ -2360,14 +2403,17 @@ let startupPrompts = Promise.resolve();
 // After a switch: the text typed before it goes back into Claude Code (the same conversation with shared
 // history, a new one otherwise) and to the clipboard. Pasted images can't be carried over.
 async function restorePendingPrompt(context) {
-  const p = context.globalState.get(K_PENDING_PROMPT);
+  await context.globalState.update(K_PENDING_PROMPT, undefined); // left by versions before 2.5.18
+  const p = context.workspaceState.get(K_PENDING_PROMPT);
   if (!p) return;
-  await context.globalState.update(K_PENDING_PROMPT, undefined);
+  await context.workspaceState.update(K_PENDING_PROMPT, undefined);
   if (Date.now() - p.at > 10 * 60e3 || !p.text?.trim()) return;
   // Automatic switch after a limit, same conversation available: carry on in it without waiting.
   if (p.limit && p.sessionId && cfg('shareHistory') && cfg('experimental.autoContinue') && process.platform === 'win32') {
     const name = selectedAccount().name;
-    const run = startAutoContinue(p.sessionId, () =>
+    // Right after the switch the user is likely still around: a "continue" typed an hour later into
+    // whatever they are doing then would be a surprise, so only wait a short while.
+    const run = startAutoContinue(p.sessionId, { forMs: SWITCH_CONTINUE_FOR_MS }, () =>
       vscode.window.setStatusBarMessage(t('Switched from "{0}" after its usage limit. Sent "continue" to Claude Code on "{1}" (experimental).', p.from, name), 15e3));
     const go = t('Continue');
     const pick = await vscode.window.showInformationMessage(

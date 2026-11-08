@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.18
+
+- After a switch for a usage limit, "continue" is only sent when the limit actually cut off a prompt you sent. A limit hit while a window starts up switches accounts without typing anything.
+- "continue" and carried-over text go only to the window they came from. Before, another open window could take them and type "continue" into a new, unrelated conversation.
+- After a switch, "continue" waits at most 15 minutes for keyboard and mouse to be idle, then gives up (after a limit reset it still waits up to a few hours).
+- A repository's default account is no longer applied at startup while its usage limit is used up.
+
 ## 2.5.17
 
 - The "hit its usage limit" notice no longer appears when Anthropic's servers are temporarily limiting requests ("not your usage limit"). Only a real account limit counts.
