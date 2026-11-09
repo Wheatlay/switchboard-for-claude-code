@@ -1113,10 +1113,11 @@ async function keepWarmTick() {
     : '';
   if (why) { log.info(`Keep cache warm: skipped, ${why}`); return; }
   // The user must be away: no input for the set idle time. Then the same typing path as auto-continue.
+  // Armed before sending: the ping often lands in the conversation before autoContinue returns.
+  keepWarm.pendingSince = Date.now();
   const res = await autoContinue(keepWarm.sessionId, { idleMs: idleSetting('keepCacheWarmIdle', 60), text: `${KEEP_WARM_MARK} ${t('Reply only with OK and do nothing else.')}` });
   if (res === 'sent') {
     keepWarm.pings++;
-    keepWarm.pendingSince = Date.now();
     log.info(`Keep cache warm: ping ${keepWarm.pings}/${max}, context ${keepWarm.context} tokens`);
     // "sent" only means the keys went out: check that the ping shows up in the conversation.
     setTimeout(() => {
@@ -1127,6 +1128,7 @@ async function keepWarmTick() {
       retryKeepWarm();
     }, 45e3);
   } else {
+    keepWarm.pendingSince = 0;
     log.info('Keep cache warm: skipped, you are active or the window could not be brought forward');
     retryKeepWarm();
   }

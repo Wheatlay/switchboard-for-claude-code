@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.19
+
+- Keep-alive no longer pings every 2 minutes. A ping that reached the conversation before typing finished was taken as lost and sent again, without ever reaching the ping limit.
+
 ## 2.5.18
 
 - After a switch for a usage limit, "continue" is only sent when the limit actually cut off a prompt you sent. A limit hit while a window starts up switches accounts without typing anything.
