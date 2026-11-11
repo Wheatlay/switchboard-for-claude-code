@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.20
+
+- Accounts kept outside ~/.claude no longer ask for permission every time Claude Code saves a plan (plan mode) or a memory. Switchboard allows those writes in each account's settings.json.
+- When every account has hit its usage limit, a single notice says which one is free again first and when, instead of offering a switch to another used-up account.
+
 ## 2.5.19
 
 - Keep-alive no longer pings every 2 minutes. A ping that reached the conversation before typing finished was taken as lost and sent again, without ever reaching the ping limit.

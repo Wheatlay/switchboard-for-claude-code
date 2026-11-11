@@ -1270,6 +1270,13 @@ function autoSwitchTarget(others) {
   return others.map((a) => ({ a, w: worst(a) })).filter((x) => x.w < 100).sort((x, y) => x.w - y.w)[0]?.a;
 }
 
+// dd.mm.yyyy, hh:mm in local time.
+function fmtDateTime(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // Known numbers only (cached from any window): an account without them is not called drained.
 function isDrained(a) {
   const e = limitsCache.get(a.id);
@@ -1306,6 +1313,19 @@ async function onLimitReached(account, interrupted) {
   const target = cfg('autoSwitchOnLimit') && autoSwitchTarget(others);
   if (target) {
     return selectAccount(target, t('usage limit reached, switched automatically'), { resume: interrupted });
+  }
+  // Every other account is used up too (an account without numbers would have been a target):
+  // offering a switch would only move to another used-up account. Say when the first one frees up;
+  // the reset reminder then switches to it or continues here.
+  if (others.every(isDrained)) {
+    const free = [account, ...others]
+      .map((a) => ({ a, at: usableAgainAt(limitsCache.get(a.id)?.data || {}) }))
+      .filter((x) => x.at > Date.now()).sort((x, y) => x.at - y.at)[0];
+    log.info(`All accounts have their usage limit used up${free ? `; first free: ${free.a.name} at ${new Date(free.at).toISOString()}` : ''}`);
+    const when = free ? t(' The first one free again: "{0}" at {1}.', free.a.name, fmtDateTime(free.at)) : '';
+    const next = interrupted && cfg('remindOnLimitReset') ? ' ' + t('The conversation will be continued then.') : '';
+    vscode.window.showWarningMessage(t('All accounts have hit their usage limit.') + when + next);
+    return;
   }
   if (!cfg('suggestSwitchOnLimit')) return;
   const buttons = others.slice(0, 2).map((a) => ({ title: t('Switch to {0}', a.name), account: a }));
@@ -1768,6 +1788,7 @@ async function cmdAdd() {
 
   let summary = mode === 'shared' ? describe(linkSharedItems(dir)) : '';
   if (mode === 'shared') syncMcpServers(dir);
+  allowConfigDirWrites(dir);
   if (historyItems().length) { linkHistory(dir, id); summary += ' ' + t('History shared with the other accounts.'); }
   await saveRecords([...recs, { id, dir, mode }]);
   const used = new Set(allAccounts().map((a) => a.color).filter(Boolean));
@@ -2203,6 +2224,34 @@ async function cmdImport({ prompt = false } = {}) {
   vscode.window.showInformationMessage(t('Imported: {0}. Use "Manage accounts" to rename them.', names));
 }
 
+// Claude Code only treats its writes to ~/.claude (plans, memory) as its own; under another
+// CLAUDE_CONFIG_DIR it asks for permission every time. Allow them in the account's settings.json
+// (for a shared account that is the shared file, which then holds the rules of every shared account).
+// Absolute paths in rules start with //, e.g. //C:/Users/x (a form confirmed to work on Windows).
+function allowConfigDirWrites(dir) {
+  const f = path.join(dir, 'settings.json');
+  let j = {};
+  try {
+    j = JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (e) {
+    if (e.code !== 'ENOENT') { log.warn(`Not adding plan/memory permissions to ${f}: ${e.message}`); return; }
+  }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return;
+  const p = dir.split(path.sep).join('/').replace(/\/+$/, '').replace(/^\/+/, '');
+  const rules = ['plans/**', 'projects/*/memory/**'].flatMap((s) => ['Write', 'Edit'].map((tool) => `${tool}(//${p}/${s})`));
+  j.permissions = j.permissions && typeof j.permissions === 'object' ? j.permissions : {};
+  const allow = Array.isArray(j.permissions.allow) ? j.permissions.allow : [];
+  const add = rules.filter((r) => !allow.includes(r));
+  if (!add.length) return;
+  j.permissions.allow = [...allow, ...add];
+  try {
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n'); // writes through a link, keeping it
+    log.info(`Allowed plan/memory writes in ${f}: ${add.join(', ')}`);
+  } catch (e) {
+    log.warn(`Cannot write ${f}: ${e.message}`);
+  }
+}
+
 async function checkSharedHealth() {
   const cur = selectedAccount();
   // Items that appeared in ~/.claude after the account was set up (e.g. agents): the account has
@@ -2441,6 +2490,7 @@ async function runStartupPrompts(context) {
     }
     await checkOverridingSetting();
     await checkSharedHealth();
+    for (const r of getRecords()) if (r.dir) allowConfigDirWrites(r.dir);
   } catch (e) {
     vscode.window.showErrorMessage(`Switchboard for Claude Code: ${e.message || e}`);
   }
