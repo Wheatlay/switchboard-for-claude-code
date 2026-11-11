@@ -264,9 +264,12 @@ async function checkOverridingSetting() {
 
 // ───────────────────────── shared items (links) ─────────────────────────
 
-const historyItems = () => (cfg('shareHistory') ? cfg('historyItems') || [] : []);
+// Never linked: Claude Code refuses to write through a linked folder ("parent-directory symlink
+// resolution changed"), whatever the permission rules say, so plan mode could not save plans.
+const NEVER_LINK = ['plans'];
+const historyItems = () => (cfg('shareHistory') ? cfg('historyItems') || [] : []).filter((i) => !NEVER_LINK.includes(i));
 // Config items for shared-profile mode (history is handled separately).
-const configItems = () => (cfg('sharedItems') || []).filter((i) => !(cfg('historyItems') || []).includes(i));
+const configItems = () => (cfg('sharedItems') || []).filter((i) => !(cfg('historyItems') || []).includes(i) && !NEVER_LINK.includes(i));
 
 function removeLink(p) {
   try {
@@ -2482,6 +2485,17 @@ async function restorePendingPrompt(context) {
 }
 
 async function runStartupPrompts(context) {
+  // Before any prompt: a notification left open would otherwise hold this back.
+  for (const r of getRecords()) {
+    if (!r.dir) continue;
+    try {
+      const done = unlinkItems(r.dir, NEVER_LINK); // a link from an earlier version becomes a real folder (with a copy)
+      if (done.length) log.info(`Unlinked ${done.join(', ')} for ${r.id}: Claude Code cannot write through a link`);
+    } catch (e) {
+      log.warn(`Cannot unlink ${NEVER_LINK.join(', ')} for ${r.id}: ${e.message}`);
+    }
+    allowConfigDirWrites(r.dir);
+  }
   try {
     await restorePendingPrompt(context);
     if (!getRecords().length && !context.globalState.get(K_IMPORT_PROMPTED)) {
@@ -2490,7 +2504,6 @@ async function runStartupPrompts(context) {
     }
     await checkOverridingSetting();
     await checkSharedHealth();
-    for (const r of getRecords()) if (r.dir) allowConfigDirWrites(r.dir);
   } catch (e) {
     vscode.window.showErrorMessage(`Switchboard for Claude Code: ${e.message || e}`);
   }

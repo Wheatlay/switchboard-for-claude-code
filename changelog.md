@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.21
+
+- Plan mode no longer asks for permission (and can fail with "parent-directory symlink resolution changed") on accounts with shared history. Their plans folder was a link to ~/.claude/plans, and Claude Code does not trust writes through a link whatever the permission rules say. The folder is no longer shared: an existing link becomes a regular folder with a copy of the plans.
+- Permission rules are set up at window start before any notification, so a notification left open no longer holds them back.
+
 ## 2.5.20
 
 - Accounts kept outside ~/.claude no longer ask for permission every time Claude Code saves a plan (plan mode) or a memory. Switchboard allows those writes in each account's settings.json.

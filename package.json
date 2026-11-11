@@ -2,7 +2,7 @@
 	"name": "switchboard-for-claude-code",
 	"displayName": "Switchboard for Claude Code",
 	"description": "Switch Claude Code accounts per window or repository and see every account's plan limits in the status bar. Not affiliated with Anthropic.",
-	"version": "2.5.20",
+	"version": "2.5.21",
 	"publisher": "wheatlay",
 	"author": {
 		"name": "Wheatlay"
@@ -232,8 +232,7 @@
 							"projects",
 							"history.jsonl",
 							"file-history",
-							"todos",
-							"plans"
+							"todos"
 						],
 						"markdownDescription": "%cfg.historyItems%",
 						"order": 1

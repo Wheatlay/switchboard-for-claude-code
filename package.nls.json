@@ -14,7 +14,7 @@
   "cfg.accountsRoot": "Folder where accounts are created. Empty = `~/.claude-accounts`.",
   "cfg.sharedItems": "Items from ~/.claude that shared-profile accounts use through links. Credentials and .claude.json always stay per account.",
   "cfg.shareHistory": "All accounts use the same conversation history from `~/.claude`. Changing this (here or with the **Share / stop sharing history across accounts** command) opens a dialog that merges existing history when turning on, or lets each account keep a copy or start empty when turning off.",
-  "cfg.historyItems": "Items treated as history, linked only while `#claudeAccounts.shareHistory#` is on: per-folder conversations (`projects`), prompt history (`history.jsonl`), checkpoints (`file-history`), `todos` and `plans`.",
+  "cfg.historyItems": "Items treated as history, linked only while `#claudeAccounts.shareHistory#` is on: per-folder conversations (`projects`), prompt history (`history.jsonl`), checkpoints (`file-history`) and `todos`. `plans` is never linked: Claude Code refuses to save plans through a link.",
   "cfg.autoApplyRepoDefault": "When a repository is opened, automatically apply the default account set for it.",
   "cfg.reloadBehavior": "What to do after switching accounts. The Claude Code extension only reads the environment when it loads, so a reload is needed; it also closes the open Claude Code conversation and terminals in this window. After the reload your last sent prompt is typed back into Claude Code and copied to the clipboard (pasted images are not carried over).",
   "cfg.applyToTerminal": "Also set `CLAUDE_CONFIG_DIR` in this window's integrated terminals so the `claude` CLI uses the same account.",
