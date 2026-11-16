@@ -404,6 +404,44 @@ function syncMcpServers(dir) {
   }
 }
 
+// Folder trust (hasTrustDialogAccepted) is stored per account in .claude.json, so after a
+// switch Claude Code asks again for folders already trusted elsewhere. Trusting a folder in
+// one account trusts it in all of them; only adds trust, never removes it.
+function syncFolderTrust() {
+  const files = [...new Set(allAccounts().map((a) => {
+    const { dir, legacy } = identityArgs(a);
+    return path.resolve(legacy || path.join(dir, '.claude.json'));
+  }))];
+  // The CLI looks keys up exactly as "C:/path", but VS Code sometimes saves "c:/path"; a
+  // lowercase-drive key then never counts. Canonical form: forward slashes, uppercase drive.
+  const canon = (k) => {
+    const s = k.replace(/\\/g, '/').replace(/\/+$/, '');
+    return /^[a-z]:/i.test(s) ? s[0].toUpperCase() + s.slice(1) : s;
+  };
+  const data = new Map();
+  const trusted = new Set();
+  for (const f of files) {
+    try {
+      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      data.set(f, j);
+      for (const [k, v] of Object.entries(j.projects || {})) if (v && v.hasTrustDialogAccepted === true) trusted.add(canon(k));
+    } catch (e) { if (e.code !== 'ENOENT') log.warn(`Folder trust not read from ${f}: ${e.message}`); }
+  }
+  for (const [f, j] of data) {
+    const projects = j.projects || {};
+    const added = [...trusted].filter((k) => !(projects[k] && projects[k].hasTrustDialogAccepted === true));
+    if (!added.length) continue;
+    try {
+      // Re-read right before writing so a concurrent CLI write is not lost.
+      const fresh = JSON.parse(fs.readFileSync(f, 'utf8'));
+      fresh.projects = fresh.projects || {};
+      for (const k of added) fresh.projects[k] = { ...(fresh.projects[k] || {}), hasTrustDialogAccepted: true };
+      fs.writeFileSync(f, JSON.stringify(fresh, null, 2), 'utf8');
+      log.info(`Folder trust copied to ${f}: ${added.length} folder(s)`);
+    } catch (e) { log.warn(`Folder trust not synced to ${f}: ${e.message}`); }
+  }
+}
+
 // Undoes links. copy=true creates independent copies; copy=false leaves the account empty.
 function unlinkItems(dir, items, { copy = true } = {}) {
   const src = homeClaudeDir();
@@ -2365,6 +2403,7 @@ async function activate(context) {
   log.info(`Activated, version ${context.extension.packageJSON.version}`);
   migrateFromOriginal(context);
   for (const a of getAccounts()) if (a.mode === 'shared' && a.dir) syncMcpServers(a.dir);
+  try { syncFolderTrust(); } catch (e) { log.warn(`Folder trust sync failed: ${e.message}`); }
   // First, synchronously: set the environment before the Claude Code extension starts the CLI.
   const drainedStart = avoidDrainedAtStartup();
   applyEnv(selectedAccount());

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.22
+
+- Claude Code no longer asks "Trust this folder?" again after switching accounts. Trust is saved per account, so a folder trusted in one account was untrusted in the others. On every start Switchboard now copies trusted folders to all accounts (it only adds trust, never removes it), saving them with an uppercase drive letter, because Claude Code does not recognize a folder saved as c:/ instead of C:/.
+
 ## 2.5.21
 
 - Plan mode no longer asks for permission (and can fail with "parent-directory symlink resolution changed") on accounts with shared history. Their plans folder was a link to ~/.claude/plans, and Claude Code does not trust writes through a link whatever the permission rules say. The folder is no longer shared: an existing link becomes a regular folder with a copy of the plans.
