@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.23
+
+- An account whose folder was deleted outside Switchboard is removed from the list at start, instead of staying as a broken entry that auto-switch could still pick. Nothing happens when the parent folder is missing too (unplugged drive, unmounted share).
+
 ## 2.5.22
 
 - Claude Code no longer asks "Trust this folder?" again after switching accounts. Trust is saved per account, so a folder trusted in one account was untrusted in the others. On every start Switchboard now copies trusted folders to all accounts (it only adds trust, never removes it), saving them with an uppercase drive letter, because Claude Code does not recognize a folder saved as c:/ instead of C:/.

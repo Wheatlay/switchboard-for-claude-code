@@ -2035,6 +2035,28 @@ async function remove(a) {
   );
   if (!choice) return;
   const wasCurrent = selectedAccount().id === a.id;
+  await forgetAccount(a);
+  if (choice === deleteBtn) removeAccountDir(a.dir);
+  updateStatus();
+  if (wasCurrent) await selectAccount(defaultAccount(), t('previous account removed'));
+}
+
+// An account whose folder was deleted outside Switchboard is dropped at start. Only when the
+// parent folder still exists, so an unplugged drive or unmounted share does not lose accounts.
+async function forgetDeletedAccounts() {
+  const gone = getAccounts().filter((a) => a.dir && !fs.existsSync(a.dir) && fs.existsSync(path.dirname(a.dir)));
+  if (!gone.length) return;
+  // Records first, in one synchronous call, so the selection falls back before applyEnv runs.
+  const ids = new Set(gone.map((a) => a.id));
+  const saved = saveRecords(getRecords().filter((x) => !ids.has(x.id)));
+  for (const a of gone) {
+    await forgetAccount(a);
+    log.info(`Account "${a.name}" removed: its folder ${a.dir} no longer exists`);
+  }
+  await saved;
+}
+
+async function forgetAccount(a) {
   await saveRecords(getRecords().filter((x) => x.id !== a.id));
   const map = { ...getRepoDefaults() };
   for (const k of Object.keys(map)) if (map[k] === a.id) delete map[k];
@@ -2050,9 +2072,6 @@ async function remove(a) {
   const avatars = { ...getAvatars() };
   delete avatars[a.id];
   await ctx.globalState.update(K_AVATARS, avatars);
-  if (choice === deleteBtn) removeAccountDir(a.dir);
-  updateStatus();
-  if (wasCurrent) await selectAccount(defaultAccount(), t('previous account removed'));
 }
 
 // Last value set by the toggle command. A change made in Settings is undone and sent through the command, so history
@@ -2402,6 +2421,8 @@ async function activate(context) {
   context.subscriptions.push(log);
   log.info(`Activated, version ${context.extension.packageJSON.version}`);
   migrateFromOriginal(context);
+  // Not awaited: globalState updates its memory at once, so a deleted account is gone before applyEnv below.
+  forgetDeletedAccounts().catch((e) => log.warn(`Deleted accounts not cleaned up: ${e.message}`));
   for (const a of getAccounts()) if (a.mode === 'shared' && a.dir) syncMcpServers(a.dir);
   try { syncFolderTrust(); } catch (e) { log.warn(`Folder trust sync failed: ${e.message}`); }
   // First, synchronously: set the environment before the Claude Code extension starts the CLI.
